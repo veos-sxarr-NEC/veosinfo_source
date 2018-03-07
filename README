@@ -1,0 +1,2 @@
+This library is responsible for interacting with VEOS and VE specific 'sysfs'
+to retrieve command specific information.

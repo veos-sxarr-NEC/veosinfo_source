@@ -1,0 +1,22 @@
+/**
+ * @brief Structure for IPC with VEOS interfaces
+ *
+ * @internal
+ * @author RPM command
+ */
+message velib_connect{
+	required int32 cmd_str = 1;  	/*!< Command ID */
+	optional int32 subcmd_str = 2; 	/* !< Sub command ID */
+	optional int32 rpm_pid = 3; 	/*!< PID of sending RPM Process */
+
+	optional int64 rpm_retval = 4; 	/*!< return value */
+	optional bytes rpm_msg = 5; 	/*!<
+					 * Message structure filled by RPM
+					 * and type-casted by VEOS based on
+					 * type of message received
+					 */
+	optional int32 ve_pid = 6; 	/*!<
+					 * VE PID to get information from
+					 * VEOS modules
+					 */
+};

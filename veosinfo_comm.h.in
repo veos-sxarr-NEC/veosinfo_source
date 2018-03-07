@@ -1,0 +1,5 @@
+#ifndef _VEOSINFO_COMM_H
+#define _VEOSINFO_COMM_H
+#define VE_SOC_PATH "@localstatedir@"
+#define VE_ETC_BASE "@sysconfdir@"
+#endif
