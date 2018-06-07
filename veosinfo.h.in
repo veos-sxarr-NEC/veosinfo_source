@@ -30,6 +30,9 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <stdbool.h>
+#include <sys/types.h>
+#include <stdint.h>
+#include <sys/shm.h>
 #define VE_MAX_NODE	8		/*!< Maximum number of VE nodes */
 #define VE_PATH_MAX	4096		/*!< Maximum possible path length */
 #define VE_FILE_NAME	255		/*!< Maximum length of file name */
@@ -577,6 +580,50 @@ struct ve_pwr_voltage {
 								 */
 };
 
+/*
+ * @brief To uniquely identify the requests of VE shared memory
+ */
+enum ipc_mode {
+	SHMKEY_RM = 0,	/*!< Delete shm segment using key */
+	SHMID_RM,	/*!< Delete shm segment using shmid */
+	SHM_RM_ALL,	/*!< Delete all shm segment */
+	SHMID_INFO,	/*!< Information of given shm segment */
+	SHM_LS,		/*!< List All segment */
+	SHM_SUMMARY,	/*!< Summary of shared Memory */
+	SHMID_QUERY,	/*!< Query whether shmid is valid or not */
+	SHMKEY_QUERY,	/*!< Query whether shmkey is valid or not */
+};
+
+/*
+ * @brief Structure to get information of each VE shared memory
+ */
+struct ve_shm_data {
+	int             id;		/*!< SHM ID */
+	key_t           key;		/*!< SHM key */
+	uid_t           uid;		/*!< Current uid */
+	gid_t           gid;		/*!< Current gid */
+	uid_t           cuid;		/*!< Creator uid */
+	gid_t           cgid;		/*!< Creator gid */
+	unsigned int    mode;		/*!< Permissions + SHM_DEST */
+	uint64_t        shm_nattch;	/*!< No. of current attaches */
+	uint64_t        shm_segsz;	/*!< Size of segment (bytes) */
+	int64_t         shm_atim;	/*!< Last attach time */
+	int64_t         shm_dtim;	/*!< Last detach time */
+	int64_t         shm_ctim;	/*!< Last change time */
+	pid_t           shm_cprid;	/*!< PID of creator */
+	pid_t           shm_lprid;	/*!< PID of last shmat(2)/shmdt(2) */
+	uint64_t        shm_rss;	/*!< Resident shared memory */
+	uint64_t        shm_swp;	/*!< Swapped shared memory */
+};
+
+/*
+ * @brief Structure to get information of removed VE shared memory
+ */
+struct ipcrm_info {
+        int shmid;      /*!< Shmid of deleted shm segment */
+        int shm_errno;  /*!< Error occured while deleting the segment */
+};
+
 int ve_match_envrn(char *);
 char *ve_create_sockpath(int);
 int ve_arch_info(int, struct ve_archinfo *);
@@ -604,4 +651,6 @@ int ve_read_fan(int, struct ve_pwr_fan *);
 int ve_read_temp(int, struct ve_pwr_temp *);
 int ve_read_voltage(int, struct ve_pwr_voltage *);
 int ve_cpufreq_info(int, unsigned long *);
+int ve_shm_info(int, int, int *, bool *, struct ve_mapheader *,
+					struct shm_info *);
 #endif

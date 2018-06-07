@@ -268,6 +268,28 @@ struct ve_pwr_mgmt_info {
 								 */
 };
 
+/**
+ * @brief Structure which contains information about system resources consumed
+ * by shared memory.
+ */
+struct velib_shm_summary {
+        int used_ids;		/*!< Number of currently existing segments */
+        ulong shm_tot;		/*!< Total number of shared memory pages */
+        ulong shm_rss;          /*!< Number of resident shared memory pages */
+};
+
+/**
+ * @brief Structure to provide information to VEOS
+ */
+struct ve_shm_info {
+	int mode;	/*!< mode SHMKEY - Removed segment using shmkey */
+			/*!< mode SHMID  - Removed segment using shmid */
+			/*!< mode SHM_ALL - Removed all segment */
+			/*!< mode SHM_LS - List All segment */
+			/*!< mode SHM_SUMMARY - Summary of share Memory */
+	int key_id;	/* SHMKEY or SHMID segment to be delete */
+};
+
 void get_ve_rlimit(struct rlimit *);
 const char *ve_sysfs_path_info(int);
 int ve_cache_info(int, char [][VE_BUF_LEN], int *);

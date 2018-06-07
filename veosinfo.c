@@ -926,23 +926,17 @@ hndl_return:
 }
 
 /**
- * @brief This function gets the uptime from VEOS specific files in 'sysfs'
+ * @brief This function is used to get uptime information.
  *
- * @param nodeid[in] VE node number corresponding to which need to get uptime
- * @param uptime_secs[out] Uptime received from VE specific 'sysfs'
+ * @param nodeid[in] VE node number
+ * @param uptime_secs[out] Value of uptime
  *
  * @return 0 on success and -1 on failure
  */
 int ve_uptime_info(int nodeid, double *uptime_secs)
 {
-	FILE *fp = NULL;
-	int nread = 0;
 	int retval = -1;
-	unsigned long jiffy = -1;
-	unsigned long cpufreq = 0;
-	char *buf = NULL;
-	char *node_uptime_path = NULL;
-	const char *ve_sysfs_path = NULL;
+	struct ve_statinfo ve_statinfo_req = { {0} };
 
 	VE_RPMLIB_TRACE("Entering");
 	if (!uptime_secs) {
@@ -951,66 +945,15 @@ int ve_uptime_info(int nodeid, double *uptime_secs)
 		errno = EINVAL;
 		goto hndl_return;
 	}
-
-	/* Get sysfs path corresponding to given VE node */
-	ve_sysfs_path = ve_sysfs_path_info(nodeid);
-	if (!ve_sysfs_path) {
-		VE_RPMLIB_ERR("Failed to get sysfs path: %s",
+	if (0 > ve_stat_info(nodeid, &ve_statinfo_req)) {
+		VE_RPMLIB_ERR("Failed to get CPU statistics: %s",
 				strerror(errno));
 		goto hndl_return;
 	}
-
-	node_uptime_path = malloc(strlen(ve_sysfs_path) + VE_FILE_NAME);
-	if (!node_uptime_path) {
-		VE_RPMLIB_ERR("Memory allocation failed for uptime path: %s",
-			strerror(errno));
-		goto hndl_return;
-	}
-
-	/* Create the path to read "jiffies" value from VE sysfs
-	 */
-	sprintf(node_uptime_path, "%s/jiffies", ve_sysfs_path);
-	fp = fopen(node_uptime_path, "r");
-	if (!fp) {
-		VE_RPMLIB_ERR("Open file '%s' failed: %s",
-				node_uptime_path, strerror(errno));
-		goto hndl_return2;
-	}
-	/* Read the value of uptime for the given node
-	 */
-	buf = malloc(sizeof(char) * VE_BUF_LEN);
-	if (!buf) {
-		VE_RPMLIB_ERR("Memory allocation failed: %s",
-				strerror(errno));
-		goto hndl_return2;
-	}
-	nread = fscanf(fp, "%s", buf);
-	if (nread == EOF || nread != 1) {
-		VE_RPMLIB_ERR("Failed to read file (%s): %s",
-				node_uptime_path, strerror(errno));
-		fclose(fp);
-		goto hndl_return3;
-	}
-	fclose(fp);
-	jiffy = atol(buf);
-	/* Get the VE specific CPU frequency */
-	if (0 > ve_cpufreq_info(nodeid, &cpufreq)) {
-		VE_RPMLIB_ERR("Failed to get CPU frequency for VE: %s",
-				strerror(errno));
-		goto hndl_return3;
-	}
-	VE_RPMLIB_DEBUG("VE specific CPU frequency received successfully: %lu",
-			cpufreq);
-
-	*uptime_secs = (double)jiffy / cpufreq;
+	*uptime_secs = (ve_statinfo_req.user[0] + ve_statinfo_req.idle[0])/MICROSEC_TO_SEC;
 	retval = 0;
-	VE_RPMLIB_DEBUG("jiffy = %lu, uptime_secs = %f",
-			 jiffy, *uptime_secs);
+	VE_RPMLIB_DEBUG("Value of uptime for VE node (%d): %f", nodeid, *uptime_secs);
 
-hndl_return3:
-	free(buf);
-hndl_return2:
-	free(node_uptime_path);
 hndl_return:
 	VE_RPMLIB_TRACE("Exiting");
 	return retval;
@@ -3380,8 +3323,6 @@ int get_ve_node(int *dev_num, int *total_dev_count)
 		 */
 		errno = 0;
 		while ((ent = readdir(dir)) != NULL) {
-			VE_RPMLIB_DEBUG("Device file name in '/dev': (%s)",
-							ent->d_name);
 			/* Read the VE device specific directory entries only
 			 */
 			if (strncmp(ent->d_name, VE_DEVICE_NAME,
@@ -3697,16 +3638,16 @@ int ve_read_temp(int nodeid, struct ve_pwr_temp *temp)
 		 * handled as the value is in degree Celsius, not micro degree
 		 * Celsius like the other thermal sensors
 		*/
-		for(hb_dev_lv = 0; hb_dev_lv <= HBM_DEV_COUNT; hb_dev_lv++) {
+		for (hb_dev_lv = 0; hb_dev_lv <= HBM_DEV_COUNT; hb_dev_lv++) {
 			match_hbm_dev = 0;
 			memset(temp_hbm_dev, '\0', sizeof(temp_hbm_dev));
 			sprintf(temp_hbm_dev, "ve_hbm%d_temp", hb_dev_lv);
-			if(!strncmp(temp->device_name[lv], temp_hbm_dev, sizeof(temp_hbm_dev))) {
+			if (!strncmp(temp->device_name[lv], temp_hbm_dev, sizeof(temp_hbm_dev))) {
 				match_hbm_dev = 1;
 				break;
 			}
 		}
-		if(!match_hbm_dev)
+		if (!match_hbm_dev)
 				temp->ve_temp[lv] = temp->ve_temp[lv] / YAML_DATA_DEM;
 		VE_RPMLIB_DEBUG("Successfully read temperature information:" \
 				" device name = %s :: temp_min = %lf :: " \
@@ -4235,7 +4176,7 @@ int read_yaml_file(int nodeid, char *type, struct ve_pwr_mgmt_info *pwr_info)
 
 					if (event.data.scalar.value) {
 						/* To handle core_id field (optional) */
-						if((!strcmp("core_id",
+						if ((!strcmp("core_id",
 								(const char *)event.data.scalar.value))) {
 							if (continue_parse) {
 								continue_parse = continue_parse + 1;
@@ -4363,6 +4304,194 @@ hndl_return1:
 	free(model_name);
 parser_delt:
 	yaml_parser_delete(&parser);
+hndl_return:
+	VE_RPMLIB_TRACE("Exiting");
+	return retval;
+}
+
+/**
+ * @brief This function will be used to communicate with VEOS and get the
+ * VE specific shared memory information.
+ *
+ * @param nodeid[in] VE node number
+ * @param mode[in] Get information from VEOS for specified mode
+ * @param key_id[in/out] Shared memory key/id
+ * @param result[out] To identify whether given KEY/ID exist on VE or not
+ * @param shm[out] Populate structure to get VE shared memory information
+ * @param ve_shm_summary[out] Populate structure to get VE shared memory
+ * summary of given node.
+ *
+ * @return 0 on success and negative value on failure
+ */
+int ve_shm_info(int nodeid, int mode, int *key_id, bool *result,
+		struct ve_mapheader *shm, struct shm_info *ve_shm_smry)
+{
+	int retval = -1;
+	int sock_fd = -1;
+	int pack_msg_len = -1;
+	void *pack_buf_send = NULL;
+	uint8_t *unpack_buf_recv = NULL;
+	char *ve_sock_name = NULL;
+	struct ve_shm_info shm_info = {0};
+	struct velib_shm_summary velib_shm_smry = {0};
+	ProtobufCBinaryData subreq = {0};
+	VelibConnect *res = NULL;
+	VelibConnect request = VELIB_CONNECT__INIT;
+
+	VE_RPMLIB_TRACE("Entering");
+	errno = 0;
+
+	/* Create the socket path corresponding to received VE node
+	 */
+	ve_sock_name = ve_create_sockpath(nodeid);
+	if (!ve_sock_name) {
+		VE_RPMLIB_ERR("Failed to create socket path for VE: %s",
+				strerror(errno));
+		goto hndl_return;
+	}
+	/* Create the socket connection corresponding to socket path
+	 */
+	sock_fd = velib_sock(ve_sock_name);
+	if (-1 == sock_fd) {
+		VE_RPMLIB_ERR("Failed to create socket:%s, error: %s",
+				ve_sock_name, strerror(errno));
+		goto hndl_return_sock;
+	} else if (-2 == sock_fd)
+		goto abort;
+
+	shm_info.mode = mode;
+	VE_RPMLIB_DEBUG("Shared memory mode = %d", shm_info.mode);
+
+	if (mode == SHMID_RM || mode == SHMKEY_RM ||
+	mode == SHMID_INFO || mode == SHMID_QUERY ||
+	mode == SHMKEY_QUERY) {
+		shm_info.key_id = *key_id;
+		VE_RPMLIB_DEBUG("SHM key/id to send to VEOS: %d", shm_info.key_id);
+	}
+	subreq.data = (uint8_t *)&shm_info;
+        subreq.len = sizeof(struct ve_shm_info);
+	request.cmd_str = RPM_QUERY;
+	request.has_subcmd_str = true;
+	request.subcmd_str = VE_SHM_INFO;
+	request.has_rpm_pid = true;
+	request.rpm_pid = getpid();
+	request.has_rpm_msg = true;
+	request.rpm_msg = subreq;
+
+	/* Get the request message size to send to VEOS */
+	pack_msg_len = velib_connect__get_packed_size(&request);
+	if (0 >= pack_msg_len) {
+		VE_RPMLIB_ERR("Failed to get size to pack message");
+		fprintf(stderr, "Failed to get size to pack message\n");
+		goto abort;
+	}
+	pack_buf_send = malloc(pack_msg_len);
+	if (!pack_buf_send) {
+		VE_RPMLIB_ERR("Memory allocation failed: %s",
+				strerror(errno));
+		goto hndl_return1;
+	}
+	memset(pack_buf_send, '\0', pack_msg_len);
+
+	/* Pack the message to send to VEOS */
+	retval = velib_connect__pack(&request, pack_buf_send);
+	if (retval != pack_msg_len) {
+		VE_RPMLIB_ERR("Failed to pack message");
+		fprintf(stderr, "Failed to pack message\n");
+		goto abort;
+	}
+
+	/* Send the IPC message to VEOS and wait for the acknowledgement
+	 * from VEOS
+	 */
+	retval = velib_send_cmd(sock_fd, pack_buf_send, pack_msg_len);
+	if (retval != pack_msg_len) {
+		VE_RPMLIB_ERR("Failed to send message: %d bytes written",
+				retval);
+		goto hndl_return2;
+	}
+	VE_RPMLIB_DEBUG("Send data successfully to VEOS and" \
+					" waiting to receive....");
+
+	unpack_buf_recv = malloc(MAX_PROTO_MSG_SIZE);
+	if (!unpack_buf_recv) {
+		VE_RPMLIB_ERR("Memory allocation failed: %s",
+				strerror(errno));
+		goto hndl_return2;
+	}
+	memset(unpack_buf_recv, '\0', MAX_PROTO_MSG_SIZE);
+
+	/* Receive the IPC message from VEOS
+	 */
+	retval = velib_recv_cmd(sock_fd, unpack_buf_recv, MAX_PROTO_MSG_SIZE);
+	VE_RPMLIB_DEBUG("Data received successfully from VEOS, now verify it.");
+
+	/* Unpack the data received from VEOS */
+	res = velib_connect__unpack(NULL, retval,
+			(const uint8_t *)(unpack_buf_recv));
+	if (!res) {
+		VE_RPMLIB_ERR("Failed to unpack message: %d", retval);
+		fprintf(stderr, "Failed to unpack message\n");
+		goto abort;
+	}
+	retval = res->rpm_retval;
+
+	/* Check if the desired return value is received
+	 */
+	if (0 != retval) {
+		VE_RPMLIB_ERR("Received message verification failed.");
+		errno = -(retval);
+	}
+	/* Populate the structure with information received from VEOS
+	 */
+	if ((mode == SHM_LS) || (mode == SHM_RM_ALL) || (mode == SHMID_INFO)) {
+		/* Required information will be written on a VH shared memory
+		 * segment. So populate structure with VH shared memory segment ID
+		 */
+		memcpy(shm, res->rpm_msg.data, res->rpm_msg.len);
+		VE_RPMLIB_DEBUG("Values received from VEOS: length %u, shmid %d",
+				shm->length,
+				shm->shmid);
+	} else if (mode == SHM_SUMMARY) {
+		/* Populate structure with VE shared memory summary for given node
+		 */
+		memcpy(&velib_shm_smry, res->rpm_msg.data, res->rpm_msg.len);
+		ve_shm_smry->used_ids = velib_shm_smry.used_ids;
+		ve_shm_smry->shm_tot= velib_shm_smry.shm_tot;
+		ve_shm_smry->shm_rss = velib_shm_smry.shm_rss;
+		ve_shm_smry->shm_swp = 0;
+		ve_shm_smry->swap_attempts = 0;
+		ve_shm_smry->swap_successes = 0;
+		VE_RPMLIB_DEBUG("Values received from VEOS: "	\
+				"used_ids = %d, shm_tot %lu, shm_rss %lu",
+				ve_shm_smry->used_ids,
+				ve_shm_smry->shm_tot,
+				ve_shm_smry->shm_rss);
+	} else if (mode == SHMKEY_RM) {
+		/* Remove the shared memory of given 'key' and return its 'ID'
+		 */
+		memcpy(&shm_info, res->rpm_msg.data, res->rpm_msg.len);
+		*key_id = shm_info.key_id;
+		VE_RPMLIB_DEBUG("Key value received from VEOS: %d", *key_id);
+	} else if (mode == SHMID_QUERY || mode == SHMKEY_QUERY) {
+		/* Result whether given shared memory exists on VE or not
+		 */
+		memcpy(result, res->rpm_msg.data, res->rpm_msg.len);
+		VE_RPMLIB_DEBUG("Resulted value received from VEOS: %d", *result);
+
+	}
+	goto hndl_return3;
+abort:
+	close(sock_fd);
+	abort();
+hndl_return3:
+	velib_connect__free_unpacked(res, NULL);
+hndl_return2:
+	free(pack_buf_send);
+hndl_return1:
+	close(sock_fd);
+hndl_return_sock:
+	free(ve_sock_name);
 hndl_return:
 	VE_RPMLIB_TRACE("Exiting");
 	return retval;
