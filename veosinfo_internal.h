@@ -291,7 +291,7 @@ struct ve_shm_info {
 };
 
 void get_ve_rlimit(struct rlimit *);
-const char *ve_sysfs_path_info(int);
+int ve_sysfs_path_info(int, const char *);
 int ve_cache_info(int, char [][VE_BUF_LEN], int *);
 int get_ve_node(int *, int *);
 int read_yaml_file(int, char*, struct ve_pwr_mgmt_info *);

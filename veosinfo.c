@@ -63,7 +63,7 @@ int ve_match_envrn(char *envrn)
 	int sock_fd = -1;
 	char sock_name[VE_PATH_MAX] = {0};
 	char *node_status_path = NULL;
-	const char *ve_sysfs_path = NULL;
+	const char ve_sysfs_path[PATH_MAX] = {0};
 
 	VE_RPMLIB_TRACE("Entering");
 	if (!envrn) {
@@ -74,13 +74,13 @@ int ve_match_envrn(char *envrn)
 
 	nodeid = atoi(envrn);
 	/* Get sysfs path corresponding to given VE node */
-	ve_sysfs_path = ve_sysfs_path_info(nodeid);
-	if (!ve_sysfs_path) {
-		VE_RPMLIB_ERR("Failed to get VE sysfs path: %s",
+	retval = ve_sysfs_path_info(nodeid, ve_sysfs_path);
+	if (-1 == retval) {
+		VE_RPMLIB_ERR("Failed to get sysfs path: %s",
 				strerror(errno));
 		goto hndl_return;
 	}
-
+	retval = -1;
 	node_status_path =
 		(char *)malloc(strlen(ve_sysfs_path) + VE_FILE_NAME);
 	if (!node_status_path) {
@@ -307,7 +307,7 @@ int ve_node_info(struct ve_nodeinfo *ve_nodeinfo_req)
 	int retval = -1;
 	int nread = 0;
 	char *node_status_path = NULL;
-	const char *ve_sysfs_path = NULL;
+	const char ve_sysfs_path[PATH_MAX] = {0};
 
 	VE_RPMLIB_TRACE("Entering");
 	if (!ve_nodeinfo_req) {
@@ -338,12 +338,14 @@ int ve_node_info(struct ve_nodeinfo *ve_nodeinfo_req)
 		VE_RPMLIB_DEBUG("Check for node_count = %d and node = %d",
 				node_count, ve_nodeinfo_req->nodeid[node_count]);
 		/* Get sysfs path corresponding to given VE node */
-		ve_sysfs_path = ve_sysfs_path_info(ve_nodeinfo_req->nodeid[node_count]);
-		if (!ve_sysfs_path) {
+		retval = ve_sysfs_path_info(ve_nodeinfo_req->nodeid[node_count],
+					ve_sysfs_path);
+		if (-1 == retval) {
 			VE_RPMLIB_ERR("Failed to get VE sysfs path: %s",
 					strerror(errno));
 			goto hndl_return2;
 		}
+		retval = -1;
 
 		/* Open VE specific sysfs directory, to get the node specific
 		 * information
@@ -1481,7 +1483,7 @@ int ve_core_info(int nodeid, int *numcore)
 	uint64_t valid_cores = 0;
 	char *endptr = NULL;
 	char core_file[PATH_MAX] = {0};
-	const char *ve_sysfs_path = NULL;
+	const char ve_sysfs_path[PATH_MAX] = {0};
 	char valid_cores_from_file[LINE_MAX] = {0};
 
 	VE_RPMLIB_TRACE("Entering");
@@ -1494,12 +1496,13 @@ int ve_core_info(int nodeid, int *numcore)
 	}
 
 	/* Get sysfs path corresponding to given VE node */
-	ve_sysfs_path = ve_sysfs_path_info(nodeid);
-	if (!ve_sysfs_path) {
+	retval = ve_sysfs_path_info(nodeid, ve_sysfs_path);
+	if (-1 == retval) {
 		VE_RPMLIB_ERR("Failed to get sysfs path: %s",
 				strerror(errno));
 		goto hndl_return;
 	}
+	retval = -1;
 	snprintf(core_file, sizeof(core_file), "%s/cores_enable", ve_sysfs_path);
 
 	fp = fopen(core_file, "r");
@@ -1762,7 +1765,7 @@ int ve_sched_setaffinity(int nodeid, pid_t pid, size_t cpusetsize,
 	} else if (-2 == sock_fd)
 		goto abort;
 
-	ve_affinity.mask = *mask;
+	memcpy(&ve_affinity.mask, mask, cpusetsize);
 	ve_affinity.cpusetsize = cpusetsize;
 
 	subreq.data = (uint8_t *)&ve_affinity;
@@ -2630,7 +2633,7 @@ int ve_cpu_info(int nodeid, struct ve_cpuinfo *cpu_info)
 	int cache_name_len = 0;
 	int ve_cache_size[VE_MAX_CACHE] = {0};
 	char ve_cache_name[VE_MAX_CACHE][VE_BUF_LEN] = { {0} };
-	const char *ve_sysfs_path = NULL;
+	const char ve_sysfs_path[PATH_MAX] = {0};
 
 	VE_RPMLIB_TRACE("Entering");
 
@@ -2670,13 +2673,13 @@ int ve_cpu_info(int nodeid, struct ve_cpuinfo *cpu_info)
 	}
 
 	/* Get sysfs path corresponding to given VE node */
-	ve_sysfs_path = ve_sysfs_path_info(nodeid);
-	if (!ve_sysfs_path) {
+	retval = ve_sysfs_path_info(nodeid, ve_sysfs_path);
+	if (-1 == retval) {
 		VE_RPMLIB_ERR("Failed to get sysfs path: %s",
 				strerror(errno));
 		goto hndl_return;
 	}
-
+	retval = -1;
 	/* Get syspath length */
 	syspath_len = strlen(ve_sysfs_path);
 	filename = (char *)malloc(syspath_len + VE_FILE_NAME);
@@ -2966,6 +2969,7 @@ hndl_return:
  * resource usage of VE process
  *
  * @param nodeid[in] VE node number
+ * @param pid[in] VE process ID
  * @param ve_get_rusage_req[out] Structure to populate resource usage of
  * VE process
  *
@@ -3147,7 +3151,7 @@ int ve_cache_info(int nodeid, char ve_cache_name[][VE_BUF_LEN], int *ve_cache_si
 	int nread = 0;
 	int retval = -1;
 	int cache_loop = 0;
-	const char *ve_sysfs_path = NULL;
+	const char ve_sysfs_path[PATH_MAX] = {0};
 	char *ve_cache_path = NULL;
 
 	VE_RPMLIB_TRACE("Entering");
@@ -3160,13 +3164,13 @@ int ve_cache_info(int nodeid, char ve_cache_name[][VE_BUF_LEN], int *ve_cache_si
 		goto hndl_return;
 	}
 	/* Get sysfs path corresponding to given VE node */
-	ve_sysfs_path = ve_sysfs_path_info(nodeid);
-	if (!ve_sysfs_path) {
+	retval = ve_sysfs_path_info(nodeid, ve_sysfs_path);
+	if (-1 == retval) {
 		VE_RPMLIB_ERR("Failed to get sysfs path: %s",
 				strerror(errno));
 		goto hndl_return;
 	}
-
+	retval = -1;
 	ve_cache_path =
 		(char *)malloc(strlen(ve_sysfs_path) + VE_FILE_NAME);
 	if (!ve_cache_path) {
@@ -3222,22 +3226,20 @@ hndl_return:
  * @brief This function populates the sysfs path corresponding to given VE node
  *
  * @param nodeid[in] VE node number
- *
- * @return Sysfs path corresponding to given node on success and
- * NULL on failure
+ * @param ve_sysfs_path[out] VE sysfs path corresponding to given node
+ * @return 0 on success and -1 on failure
  */
-const char *ve_sysfs_path_info(int nodeid)
+int ve_sysfs_path_info(int nodeid, const char *ve_sysfs_path)
 {
 	struct udev_device *ve_udev = NULL;
 	struct stat sb = {0};
 	struct udev *udev = udev_new();
 	int retval = -1;
-	const char *ve_sysfs_path = NULL;
 	int fd = -1;
 	char *ve_dev_filename = NULL;
+	const char *sysfs_path = NULL;
 
 	VE_RPMLIB_TRACE("Entering");
-	ve_sysfs_path = NULL;
 
 	ve_dev_filename = (char *)malloc(sizeof(char) * VE_FILE_NAME);
 	if (!ve_dev_filename) {
@@ -3262,6 +3264,7 @@ const char *ve_sysfs_path_info(int nodeid)
 		goto hndl_return1;
 	}
 	close(fd);
+	retval = -1;
 	/* Create new udev device, and fill the information from the sys device
 	 * and the udev database entry
 	 */
@@ -3274,17 +3277,22 @@ const char *ve_sysfs_path_info(int nodeid)
 	/* Retrieve the sys path of the udev device.
 	 * The path is an absolute path and starts with the sys mount point
 	 */
-	ve_sysfs_path = udev_device_get_syspath(ve_udev);
-	if (!ve_sysfs_path) {
+	sysfs_path = udev_device_get_syspath(ve_udev);
+	if (!sysfs_path) {
 		VE_RPMLIB_ERR("Failed to get sysfs path: %s",
 				strerror(errno));
-		goto hndl_return1;
+		goto udev_get_path_err;
 	}
+	memcpy((char *)ve_sysfs_path, sysfs_path, strlen(sysfs_path));
+	retval = 0;
+udev_get_path_err:
+	udev_device_unref(ve_udev);
 hndl_return1:
 	free(ve_dev_filename);
 hndl_return:
 	VE_RPMLIB_TRACE("Exiting");
-	return ve_sysfs_path;
+	udev_unref(udev);
+	return retval;
 }
 
 /**
@@ -3389,7 +3397,7 @@ int ve_phy_core_map(int nodeid, int phy_core[])
 	int cntr = 0;
 	int indx = 0;
 	char *endptr = NULL;
-	const char *ve_sysfs_path = NULL;
+	char ve_sysfs_path[PATH_MAX] = {0};
 	char *tmp = NULL;
 	char core_file[PATH_MAX] = {0};
 	char valid_cores_from_file[LINE_MAX] = {0};
@@ -3406,12 +3414,13 @@ int ve_phy_core_map(int nodeid, int phy_core[])
 
 	/* Get sysfs path corresponding to given VE node
 	*/
-	ve_sysfs_path = ve_sysfs_path_info(nodeid);
-	if (!ve_sysfs_path) {
+	retval = ve_sysfs_path_info(nodeid, ve_sysfs_path);
+	if (-1 == retval) {
 		VE_RPMLIB_ERR("Failed to get sysfs path: %s",
 				strerror(errno));
 		goto hndl_return;
 	}
+	retval = -1;
 	snprintf(core_file, sizeof(core_file), "%s/cores_enable", ve_sysfs_path);
 
 	fp = fopen(core_file, "r");
@@ -3478,7 +3487,7 @@ char *ve_get_modelname(int nodeid)
 	FILE *fp = NULL;
 	int nread = 0;
 	char *model_name = NULL;
-	const char *ve_sysfs_path = NULL;
+	char ve_sysfs_path[PATH_MAX] = {0};
 	char *cmn_filename = NULL;
 	char product_type[VE_DATA_LEN] = {0};
 	char model_num[VE_DATA_LEN] = {0};
@@ -3486,12 +3495,14 @@ char *ve_get_modelname(int nodeid)
 	VE_RPMLIB_TRACE("Entering");
 
 	model_name = NULL;
-	ve_sysfs_path = ve_sysfs_path_info(nodeid);
-	if (!ve_sysfs_path) {
+
+	int retval = ve_sysfs_path_info(nodeid, ve_sysfs_path);
+	if (-1 == retval) {
 		VE_RPMLIB_ERR("Failed to get sysfs path: %s",
 				strerror(errno));
 		goto hndl_return;
 	}
+	retval = -1;
 	cmn_filename = (char *)malloc(strlen(ve_sysfs_path) + VE_FILE_NAME);
 	if (!cmn_filename) {
 		VE_RPMLIB_ERR("Memory allocation failed: %s",
@@ -3722,7 +3733,7 @@ int ve_cpufreq_info(int nodeid, unsigned long *cpufreq)
 	int nread = 0;
 	int retval = -1;
 	char *ve_cpufreq_path = NULL;
-	const char *ve_sysfs_path = NULL;
+	char ve_sysfs_path[PATH_MAX] = {0};
 
 	VE_RPMLIB_TRACE("Entering");
 
@@ -3733,13 +3744,13 @@ int ve_cpufreq_info(int nodeid, unsigned long *cpufreq)
 		goto hndl_return;
 	}
 	/* Get sysfs path corresponding to given VE node */
-	ve_sysfs_path = ve_sysfs_path_info(nodeid);
-	if (!ve_sysfs_path) {
+	retval = ve_sysfs_path_info(nodeid, ve_sysfs_path);
+	if (-1 == retval) {
 		VE_RPMLIB_ERR("Failed to get sysfs path: %s",
 				strerror(errno));
 		goto hndl_return;
 	}
-
+	retval = -1;
 	ve_cpufreq_path =
 		(char *)malloc(strlen(ve_sysfs_path) + VE_FILE_NAME);
 	if (!ve_cpufreq_path) {
@@ -3859,6 +3870,7 @@ char *ve_get_sensor_device_name(int nodeid, int core_id, char *dev_name,
 				}
 				if (lv == ve_cores) {
 					*ret_flag = -1;
+					free(dup_devname_addr);
 					goto hndl_return;
 
 				}
@@ -3875,7 +3887,13 @@ char *ve_get_sensor_device_name(int nodeid, int core_id, char *dev_name,
 		}
 	}
 	sprintf((dup_devname_addr + index), "%d", log_core_val);
-	new_dev_name = strcat(dup_devname_addr, device_name);
+	new_dev_name = malloc(VE_BUF_LEN);
+	if (!new_dev_name) {
+		VE_RPMLIB_ERR("Memory allocation failed: %s", strerror(errno));
+		goto hndl_return;
+	}
+	sprintf(new_dev_name, "%s%s", dup_devname_addr, device_name);
+	free(dup_devname_addr);
 	VE_RPMLIB_DEBUG("New sensor device name: %s", new_dev_name);
 hndl_return:
 	VE_RPMLIB_TRACE("Exiting");
@@ -3893,7 +3911,7 @@ hndl_return:
 int read_file_value(int nodeid, char *file_name)
 {
 	FILE *fp = NULL;
-	const char *ve_sysfs_path = NULL;
+	char ve_sysfs_path[PATH_MAX] = {0};
 	char *ve_file_path = NULL;
 	int nread = -1;
 	double ve_pwr_val = -1;
@@ -3901,13 +3919,13 @@ int read_file_value(int nodeid, char *file_name)
 	VE_RPMLIB_TRACE("Entering");
 
 	/* Get sysfs path corresponding to given VE node */
-	ve_sysfs_path = ve_sysfs_path_info(nodeid);
-	if (!ve_sysfs_path) {
+	int retval = ve_sysfs_path_info(nodeid, ve_sysfs_path);
+	if (-1 == retval) {
 		VE_RPMLIB_ERR("Failed to get sysfs path: %s",
 				strerror(errno));
 		goto hndl_return;
 	}
-
+	retval = -1;
 	/* Get the path to read desired value for given node */
 	ve_file_path =
 		(char *)malloc(strlen(ve_sysfs_path) + VE_FILE_NAME);
@@ -4008,6 +4026,7 @@ int get_yaml_data(char parsed_value[][MAX_DEVICE_LEN],
 						sizeof(pwr_info->device_name[tot_cnt]));
 					strcpy(pwr_info->device_name[tot_cnt],
 							sensor_device_name);
+					free(sensor_device_name);
 				}
 				VE_RPMLIB_DEBUG("New Sensor device name : %s",
 						pwr_info->device_name[tot_cnt]);
@@ -4132,6 +4151,7 @@ int read_yaml_file(int nodeid, char *type, struct ve_pwr_mgmt_info *pwr_info)
 					 (const char *)event.data.scalar.value))) {
 			VE_RPMLIB_DEBUG("Matched with given model(%s)",
 					event.data.scalar.value);
+			yaml_event_delete(&event);
 			do {
 				VE_RPMLIB_DEBUG("Parse file till" \
 						" YAML_MAPPING_END_EVENT");
@@ -4141,7 +4161,7 @@ int read_yaml_file(int nodeid, char *type, struct ve_pwr_mgmt_info *pwr_info)
 								" file (%s): %s",
 								yamlfile,
 								strerror(errno));
-						goto hndl_return2;
+						goto event_delete;
 					}
 				}
 				do {
@@ -4154,7 +4174,7 @@ int read_yaml_file(int nodeid, char *type, struct ve_pwr_mgmt_info *pwr_info)
 								" (%s): %s",
 								yamlfile,
 								strerror(errno));
-							goto hndl_return2;
+							goto event_delete;
 						}
 					}
 					parsing_flag = 0;
@@ -4168,7 +4188,7 @@ int read_yaml_file(int nodeid, char *type, struct ve_pwr_mgmt_info *pwr_info)
 								" (%s): %s",
 								yamlfile,
 								strerror(errno));
-							goto hndl_return2;
+							goto event_delete;
 						}
 					}
 					VE_RPMLIB_DEBUG("Parse the file: %s",
@@ -4180,13 +4200,13 @@ int read_yaml_file(int nodeid, char *type, struct ve_pwr_mgmt_info *pwr_info)
 								(const char *)event.data.scalar.value))) {
 							if (continue_parse) {
 								continue_parse = continue_parse + 1;
+								yaml_event_delete(&event);
 								continue;
-							}
-							else if (save_values) {
+							} else if (save_values)
 								save_values = save_values + 2;
-							}
 						} else if (continue_parse) {
 								continue_parse--;
+								yaml_event_delete(&event);
 								continue;
 						}
 						strncpy(parsed_value[index],
@@ -4205,6 +4225,7 @@ int read_yaml_file(int nodeid, char *type, struct ve_pwr_mgmt_info *pwr_info)
 								parsed_value[index]);
 						if (!yaml_data_store)
 							continue;
+					yaml_event_delete(&event);
 					}
 					count++;
 					if (save_values) {
@@ -4213,6 +4234,7 @@ int read_yaml_file(int nodeid, char *type, struct ve_pwr_mgmt_info *pwr_info)
 								"value and " \
 								"continue: %d",
 								save_values);
+						yaml_event_delete(&event);
 						continue;
 					}
 					if (yaml_data_store) {
@@ -4229,7 +4251,7 @@ int read_yaml_file(int nodeid, char *type, struct ve_pwr_mgmt_info *pwr_info)
 									"get yaml data " \
 									": %s",
 									strerror(errno));
-							goto hndl_return2;
+							goto event_delete;
 						}
 
 						if (pwr_info->count) {
@@ -4255,6 +4277,7 @@ int read_yaml_file(int nodeid, char *type, struct ve_pwr_mgmt_info *pwr_info)
 						count = 0;
 						continue_parse = 0;
 						save_values = 0;
+						yaml_event_delete(&event);
 						continue;
 					}
 					/* Save the values if type is matched */
@@ -4267,6 +4290,7 @@ int read_yaml_file(int nodeid, char *type, struct ve_pwr_mgmt_info *pwr_info)
 						count = 0;
 						continue_parse = 0;
 						yaml_data_store = 1;
+						yaml_event_delete(&event);
 					} else {
 						if (count ==  DEV_MATCH_NUMBER) {
 							VE_RPMLIB_DEBUG("device type" \
@@ -4277,27 +4301,33 @@ int read_yaml_file(int nodeid, char *type, struct ve_pwr_mgmt_info *pwr_info)
 							save_values = 0;
 							yaml_data_store = 0;
 						}
+						yaml_event_delete(&event);
 					}
 				} while (event.type != YAML_MAPPING_END_EVENT);
+				yaml_event_delete(&event);
 				if (yaml_parser_parse(&parser, &event) == 0) {
 					VE_RPMLIB_ERR("Failed to parse file" \
 							" (%s): %s", yamlfile,
 							strerror(errno));
-					goto hndl_return2;
+					goto event_delete;
 				}
 				parsing_flag = 1;
 			} while (event.type != YAML_MAPPING_END_EVENT);
+			yaml_event_delete(&event);
 			break;
 		} else {
 			VE_RPMLIB_DEBUG("Model: %s not matched", model_name);
+			yaml_event_delete(&event);
 			continue;
 		}
+		yaml_event_delete(&event);
 	} while (event.type != YAML_STREAM_END_EVENT);
 
 	index = 0;
 	retval = 0;
-	yaml_event_delete(&event);
 	fclose(fp);
+event_delete:
+	yaml_event_delete(&event);
 hndl_return2:
 	free(yamlfile);
 hndl_return1:
@@ -4441,6 +4471,7 @@ int ve_shm_info(int nodeid, int mode, int *key_id, bool *result,
 	if (0 != retval) {
 		VE_RPMLIB_ERR("Received message verification failed.");
 		errno = -(retval);
+		goto hndl_return3;
 	}
 	/* Populate the structure with information received from VEOS
 	 */
@@ -4486,6 +4517,7 @@ abort:
 	abort();
 hndl_return3:
 	velib_connect__free_unpacked(res, NULL);
+	free(unpack_buf_recv);
 hndl_return2:
 	free(pack_buf_send);
 hndl_return1:
