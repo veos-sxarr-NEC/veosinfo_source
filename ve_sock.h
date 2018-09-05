@@ -55,6 +55,7 @@ enum velib_cmdreq {
 	VE_ACCTINFO,
 	VE_CREATE_PROCESS,
 	VE_SHM_INFO,
+	VE_GET_REGVALS,
 	VE_RPM_INVALID = -1
 };
 

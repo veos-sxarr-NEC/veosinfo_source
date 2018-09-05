@@ -41,6 +41,7 @@
 #define VMFLAGS_LENGTH	81
 #define VE_MAX_CACHE	4		/*!< Maximum number of VE cache */
 #define VE_DATA_LEN     20
+#define VE_MAX_REGVALS  64		/*!< Max nr of transfered registers */
 #define MAX_DEVICE_LEN  255
 #define MAX_POWER_DEV   20
 #define VE_PAGE_SIZE	2097152
@@ -653,4 +654,6 @@ int ve_read_voltage(int, struct ve_pwr_voltage *);
 int ve_cpufreq_info(int, unsigned long *);
 int ve_shm_info(int, int, int *, bool *, struct ve_mapheader *,
 					struct shm_info *);
+int ve_get_regvals(int, pid_t, int, int *, uint64_t *);
+
 #endif
