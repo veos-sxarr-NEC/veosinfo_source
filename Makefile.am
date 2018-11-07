@@ -1,3 +1,4 @@
+ACLOCAL_AMFLAGS = -I m4
 lib_LTLIBRARIES = libveosinfo.la
 libveosinfo_la_SOURCES = \
 	veosinfo.c \
@@ -10,7 +11,8 @@ libveosinfo_la_SOURCES = \
 	veosinfo_log.h \
 	veos_RPM.pb-c.c\
 	veos_RPM.pb-c.h
-libveosinfo_la_CFLAGS = -g -Wall -Werror
+libveosinfo_la_CFLAGS = -g -Wall
 libveosinfo_la_LDFLAGS = -version-info 1:0:0
 libveosinfo_la_includedir = $(includedir)/veosinfo
 libveosinfo_la_include_HEADERS = veosinfo.h veosinfo_log.h
+EXTRA_DIST = debian

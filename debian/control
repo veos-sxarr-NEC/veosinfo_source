@@ -1,0 +1,30 @@
+Source: veosinfo
+Section: libs
+Priority: extra
+Maintainer: NEC Corporation
+Build-Depends: debhelper (>=9),
+               dh-autoreconf,
+               libyaml-dev,
+               liblog4c-dev,
+               libtool,
+               autoconf,
+               automake,
+               protobuf-c-compiler,
+               protobuf-compiler,
+               libprotobuf-c-dev,
+               libudev-dev
+Standards-Version: 3.9.8
+
+Package: veosinfo
+Architecture: any
+Multi-Arch: same
+Depends: ${misc:Depends}, ${shlibs:Depends}, libyaml-0-2
+Description: This library is responsible for interacting with
+ VEOS and VE specific 'sysfs' to retrieve command
+ specific information.
+
+Package: veosinfo-dev
+Architecture: any
+Multi-Arch: same
+Depends: ${misc:Depends}, ${shlibs:Depends}, veosinfo
+Description: Header files for "veosinfo" library.

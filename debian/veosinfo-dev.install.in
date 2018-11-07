@@ -1,0 +1,2 @@
+.@prefix@/lib64/lib*.so
+.@prefix@/include/*

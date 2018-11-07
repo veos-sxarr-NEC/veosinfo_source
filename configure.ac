@@ -2,8 +2,8 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([veosinfo], [1.2.2], [in_aur_os@nti.jp.nec.com])
-AM_INIT_AUTOMAKE(veosinfo, 1.2.2)
+AC_INIT([veosinfo], [1.3.2], [veos@sxarr.jp.nec.com])
+AM_INIT_AUTOMAKE(veosinfo, 1.3.2)
 AC_CONFIG_SRCDIR([ve_sock.h])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_COMMANDS([PROTO],
@@ -13,7 +13,8 @@ AC_ARG_WITH(ve-prefix, [AS_HELP_STRING([--with-ve-prefix],
             [ve_prefix=${with_ve_prefix}],
             [ve_prefix=/opt/nec/ve])
 AC_SUBST(ve_prefix)
-
+CFLAGS="$CFLAGS -I${prefix}/include"
+AC_PREFIX_DEFAULT([/opt/nec/ve/veos])
 # Checks for programs.
 AC_PROG_CC
 
@@ -46,5 +47,8 @@ AC_CHECK_FUNCS([memset realpath socket strcasecmp strchr strerror strtoul])
 
 AC_CONFIG_FILES([Makefile
 		veosinfo_comm.h
-		veosinfo.h])
+		veosinfo.h
+		debian/rules
+		debian/veosinfo.install
+		debian/veosinfo-dev.install])
 AC_OUTPUT

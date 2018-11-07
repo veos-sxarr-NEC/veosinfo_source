@@ -337,6 +337,7 @@ int ve_node_info(struct ve_nodeinfo *ve_nodeinfo_req)
 								node_count++) {
 		VE_RPMLIB_DEBUG("Check for node_count = %d and node = %d",
 				node_count, ve_nodeinfo_req->nodeid[node_count]);
+		memset(ve_sysfs_path, '\0', PATH_MAX);
 		/* Get sysfs path corresponding to given VE node */
 		retval = ve_sysfs_path_info(ve_nodeinfo_req->nodeid[node_count],
 					ve_sysfs_path);
