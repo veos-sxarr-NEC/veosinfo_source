@@ -51,6 +51,10 @@
 #define VE_NODE_SPECIFIER	"-N"
 #define MICROSEC_TO_SEC		1000000
 
+#ifdef __cplusplus  
+extern "C" {  
+#endif  
+
 /**
  * @brief Structure to get VE architecture information
  */
@@ -656,4 +660,7 @@ int ve_shm_info(int, int, int *, bool *, struct ve_mapheader *,
 					struct shm_info *);
 int ve_get_regvals(int, pid_t, int, int *, uint64_t *);
 
+#ifdef __cplusplus 
+} //extern "C"
+#endif
 #endif

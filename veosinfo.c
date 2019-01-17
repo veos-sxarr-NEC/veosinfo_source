@@ -4309,6 +4309,7 @@ int read_yaml_file(int nodeid, char *type, struct ve_pwr_mgmt_info *pwr_info)
 					yamlfile, strerror(errno));
 			goto hndl_return2;
 		}
+
 		/* Start parsing if, VE model matched */
 		if (event.type == YAML_SCALAR_EVENT &&
 				(!strcmp(model_name,
@@ -4479,17 +4480,17 @@ int read_yaml_file(int nodeid, char *type, struct ve_pwr_mgmt_info *pwr_info)
 			} while (event.type != YAML_MAPPING_END_EVENT);
 			yaml_event_delete(&event);
 			break;
-		} else {
+		} else
 			VE_RPMLIB_DEBUG("Model: %s not matched", model_name);
+		if (event.type == YAML_SCALAR_EVENT) {
 			yaml_event_delete(&event);
-			continue;
 		}
-		yaml_event_delete(&event);
 	} while (event.type != YAML_STREAM_END_EVENT);
 
 	index = 0;
 	retval = 0;
 	fclose(fp);
+
 event_delete:
 	yaml_event_delete(&event);
 hndl_return2:
