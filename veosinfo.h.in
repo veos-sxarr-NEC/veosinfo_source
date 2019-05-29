@@ -33,9 +33,16 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <sys/shm.h>
+#include <limits.h>
+#include <sys/mman.h>
+#define VE_EINVAL_COREID	-514	/*!< Error number for invalid cores */
+#define VE_EINVAL_NUMAID	-515	/*!< Error number for invalid NUMA node */
 #define VE_MAX_NODE	8		/*!< Maximum number of VE nodes */
 #define VE_PATH_MAX	4096		/*!< Maximum possible path length */
 #define VE_FILE_NAME	255		/*!< Maximum length of file name */
+#define FILENAME	15              /*!< Length of file used to get
+					 * pmap/ipcs/ipcrm command's information
+					 */
 #define VE_BUF_LEN	255
 #define VE_MAX_CORE_PER_NODE 16
 #define VMFLAGS_LENGTH	81
@@ -50,6 +57,8 @@
 #define VE_EXEC_PATH	"@ve_prefix@/bin/ve_exec"
 #define VE_NODE_SPECIFIER	"-N"
 #define MICROSEC_TO_SEC		1000000
+#define VE_NUMA_NUM	2		/* Maximum NUMA nodes in each VE node */
+#define MAX_CORE_IN_HEX	4		/* Maximum core value in HEX */
 
 #ifdef __cplusplus  
 extern "C" {  
@@ -268,9 +277,10 @@ struct ve_vmstat {
  * @brief Structure to get shared memory ID and data length from VEOS for
  * process's memory mapping
  */
-struct ve_mapheader {
-	unsigned int length;	/*!< Shared memory segment length */
-	int shmid;		/*!< Shared memory identifier */
+struct file_info {
+	unsigned int length;		/*!< Information length */
+	int nodeid;			/*!< VE Nodeid */
+	char file[FILENAME];		/*!< File name */
 };
 
 /**
@@ -345,7 +355,6 @@ struct ve_pidstat {
 	char state;			/*!< Process state
 					 *(running, sleeping, stopped, zombie)
 					 */
-	int ppid;			/*!< Parent Process ID  */
 	int processor;			/*!< Core on which task is scheduled on */
 	long priority;			/*!< Scheduling priority */
 	long nice;			/*!< Nice level */
@@ -465,7 +474,6 @@ struct ve_cpuinfo {
 					 * Linux-specific measurement of the
 					 * CPU's speed in MIPS
 					 */
-	int  nnodes;			/*!< Number of NUMA modes */
 	char op_mode[VE_DATA_LEN];	/*!<
 					 * VE sysfs: Operation mode,
 					 * 32 bit or 64 bit
@@ -629,12 +637,31 @@ struct ipcrm_info {
         int shm_errno;  /*!< Error occured while deleting the segment */
 };
 
+/**
+ * @brief Structure to get the NUMA information for given VE node
+ */
+struct ve_numa_stat {
+	int tot_numa_nodes;                        /*!< NUMA node count */
+	char ve_core[VE_NUMA_NUM][MAX_CORE_IN_HEX];/*!< list of cores in each NUMA node */
+	unsigned long long mem_size[VE_NUMA_NUM];  /*!< Memory size of each NUMA node */
+	unsigned long long mem_free[VE_NUMA_NUM];  /*!< Free memory in each NUMA node */
+};
+
+/**
+ * @brief To uniquely identify the request while creating task in VEOS.
+ */
+enum create_task_flag {
+	DEFAULT_TASK_STRUCT = 0,	/*!< Default task_struct */
+	PERSERVE_TASK_STRUCT, 		/*!< Preserve task_struct when task exited */
+	SET_TASK_LIMIT,			/*!< Set process resource limits */
+};
+
 int ve_match_envrn(char *);
 char *ve_create_sockpath(int);
 int ve_arch_info(int, struct ve_archinfo *);
 int ve_get_nos(unsigned int *, int *);
 int ve_node_info(struct ve_nodeinfo *);
-int ve_create_process(int, int, int);
+int ve_create_process(int, int, int, int, int, cpu_set_t *);
 int ve_check_pid(int, int);
 int ve_mem_info(int, struct ve_meminfo *);
 int ve_uptime_info(int, double *);
@@ -646,7 +673,7 @@ int ve_sched_getaffinity(int, pid_t, size_t, cpu_set_t *);
 int ve_sched_setaffinity(int, pid_t, size_t, cpu_set_t *);
 int ve_core_info(int, int *);
 int ve_pidstat_info(int, pid_t, struct ve_pidstat *);
-int ve_map_info(int, pid_t, struct ve_mapheader *);
+int ve_map_info(int, pid_t, unsigned int *, char *);
 int ve_vmstat_info(int, struct ve_vmstat *);
 int ve_pidstatus_info(int, pid_t, struct ve_pidstatus *);
 int ve_pidstatm_info(int, pid_t, struct ve_pidstatm *);
@@ -656,9 +683,14 @@ int ve_read_fan(int, struct ve_pwr_fan *);
 int ve_read_temp(int, struct ve_pwr_temp *);
 int ve_read_voltage(int, struct ve_pwr_voltage *);
 int ve_cpufreq_info(int, unsigned long *);
-int ve_shm_info(int, int, int *, bool *, struct ve_mapheader *,
-					struct shm_info *);
+int ve_shm_info(int, int, int *, bool *, struct ve_shm_data *,
+				struct shm_info *);
 int ve_get_regvals(int, pid_t, int, int *, uint64_t *);
+int ve_check_node_status(int);
+int ve_numa_info(int, struct ve_numa_stat *);
+int ve_delete_dummy_task(int, pid_t);
+int ve_shm_list_or_remove(int , int , unsigned int *, char *);
+int ve_chk_exec_format(char *);
 
 #ifdef __cplusplus 
 } //extern "C"

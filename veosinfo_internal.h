@@ -60,6 +60,7 @@
 #define HBM_DEV_COUNT	5		/*!<
 					 * Count of Thermal "ve_hbm[0..5]_temp" device
 					 */
+#define ELF_VE  251
 
 /**
  * @brief RPM library specific structure to get the memory information of
@@ -123,7 +124,6 @@ struct velib_pidstat {
 					 * Process state
 					 * (running, sleeping, stopped, zombie)
 					 */
-	int ppid;			/*!< Parent Process ID  */
 	int processor;			/*!< Core on which task is scheduled on */
 	long priority;			/*!< Scheduling priority */
 	long nice;			/*!< Nice level */
@@ -214,6 +214,13 @@ struct velib_create_process {
 					      * To store the process limit
 					      * as per flag value
 					      */
+	int numa_num;		/*!< NUMA node number */
+	int membind_flag;	/*!< '--localmembind' is given or not */
+	cpu_set_t set;		/*!< CPU mask */
+	bool cpu_mask_flag;	/*!<
+				 * This flag will decide the CPU mask
+				 * is set or not
+				 */
 };
 
 /**
@@ -287,8 +294,16 @@ struct ve_shm_info {
 			/*!< mode SHM_ALL - Removed all segment */
 			/*!< mode SHM_LS - List All segment */
 			/*!< mode SHM_SUMMARY - Summary of share Memory */
-	int key_id;	/* SHMKEY or SHMID segment to be delete */
+	int key_id;	/*!< SHMKEY or SHMID segment to be delete */
+	int nodeid;	/*!< VE Node ID */
 };
+
+/* Memory policies */
+enum mempolicy {
+	MPOL_DEFAULT,
+	MPOL_BIND = 2,
+};
+
 
 void get_ve_rlimit(struct rlimit *);
 int ve_sysfs_path_info(int, const char *);
