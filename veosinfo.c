@@ -581,7 +581,7 @@ int ve_create_process(int nodeid, int pid, int flag, int numa_num,
 	} else {
 		ve_create_proc.cpu_mask_flag = false;
 	}
-
+	ve_create_proc.ppid = getppid();
 	subreq.data = (uint8_t *)&ve_create_proc;
 	subreq.len = sizeof(struct velib_create_process);
 
@@ -3461,7 +3461,6 @@ int ve_sysfs_path_info(int nodeid, const char *ve_sysfs_path)
 	struct stat sb = {0};
 	struct udev *udev = udev_new();
 	int retval = -1;
-	int fd = -1;
 	char *ve_dev_filename = NULL;
 	const char *sysfs_path = NULL;
 
@@ -3475,21 +3474,12 @@ int ve_sysfs_path_info(int nodeid, const char *ve_sysfs_path)
 	}
 	sprintf(ve_dev_filename, "%s/%s%d", DEV_PATH, VE_DEVICE_NAME, nodeid);
 
-	fd = open(ve_dev_filename, O_RDWR);
-	if (fd < 0) {
-		VE_RPMLIB_ERR("Couldn't open file (%s): %s",
-			ve_dev_filename, strerror(errno));
-		goto hndl_return1;
-	}
-
-	retval = fstat(fd, &sb);
+	retval = stat(ve_dev_filename, &sb);
 	if (-1 == retval) {
 		VE_RPMLIB_ERR("Failed to get file status(%s): %s",
 			ve_dev_filename, strerror(errno));
-		close(fd);
 		goto hndl_return1;
 	}
-	close(fd);
 	retval = -1;
 	/* Create new udev device, and fill the information from the sys device
 	 * and the udev database entry
