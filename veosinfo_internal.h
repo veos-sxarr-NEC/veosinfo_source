@@ -37,6 +37,9 @@
 #define VE_PROCESSOR	"ve"
 #define VE_HW_PLATFORM	"ve"
 #define MAX_PROTO_MSG_SIZE 4096
+#define MAX_RESOURCE_LIMIT 18014398509481983	/*!< Maximum limit for
+						*resource s, v, m, c, d
+						*/
 #define VE_MAX_CACHE	4		/*!< Maximum number of VE cache */
 #define DEV_PATH	"/dev"		/*!< VE node device path */
 #define VE_DEVICE_NAME	"veslot"	/*!< VE node name */
@@ -61,6 +64,7 @@
 					 * Count of Thermal "ve_hbm[0..5]_temp" device
 					 */
 #define ELF_VE  251
+#define KB 1024
 
 /**
  * @brief RPM library specific structure to get the memory information of
@@ -150,6 +154,7 @@ struct velib_pidstat {
 					 * Flag to get statistics of single
 					 * thread (0) or the whole thread group (1)
 					 */
+	pid_t tgid;			/* Thread Group ID of process */
 };
 
 /**
@@ -305,8 +310,26 @@ enum mempolicy {
 	MPOL_BIND = 2,
 };
 
+/* To support VE_LIMIT_OPT for resourec limit */
+enum ve_rlim {
+	HARDC = 1,
+	SOFTC,
+	HARDD,
+	SOFTD,
+	HARDI,
+	SOFTI,
+	HARDM,
+	SOFTM,
+	HARDS,
+	SOFTS,
+	HARDT,
+	SOFTT,
+	HARDV,
+	SOFTV,
+	VE_RLIM_CNT
+};
 
-void get_ve_rlimit(struct rlimit *);
+int get_ve_rlimit(struct rlimit *);
 int ve_sysfs_path_info(int, const char *);
 int ve_cache_info(int, char [][VE_BUF_LEN], int *);
 int get_ve_node(int *, int *);
@@ -317,4 +340,6 @@ char *ve_get_sensor_device_name(int, int, char *, int *);
 int read_file_value(int, char *);
 int get_yaml_data(char [][MAX_DEVICE_LEN], struct ve_pwr_mgmt_info *,
 						int, char *, int, int);
+int get_ve_limit_opt(char *, struct rlimit *);
+int get_value(char *, unsigned long long *);
 #endif

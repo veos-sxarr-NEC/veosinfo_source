@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2017-2018 NEC Corporation
+ * Copyright (C) 2017-2019 NEC Corporation
  * This file is part of the VEOS information library.
  *
  * The VEOS information library is free software; you can redistribute it
@@ -28,6 +28,7 @@
 #define _VE_SOCK_H
 
 #include <sys/types.h>
+#define VEOS_SOC_PATH "@localstatedir@"
 
 /**
  * @brief To uniquely identify request, sent to VEOS
@@ -58,6 +59,11 @@ enum velib_cmdreq {
 	VE_GET_REGVALS,
 	VE_NUMA_INFO,
 	VE_DEL_DUMMY_TASK,
+	VE_SWAP_STATUSINFO,
+	VE_SWAP_INFO,
+	VE_SWAP_NODEINFO,
+	VE_SWAP_OUT,
+	VE_SWAP_IN,
 	VE_RPM_INVALID = -1
 };
 

@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2017-2018 NEC Corporation
+ * Copyright (C) 2017-2019 NEC Corporation
  * This file is part of the VEOS information library.
  *
  * The VEOS information library is free software; you can redistribute it
@@ -37,6 +37,10 @@
 #include <sys/mman.h>
 #define VE_EINVAL_COREID	-514	/*!< Error number for invalid cores */
 #define VE_EINVAL_NUMAID	-515	/*!< Error number for invalid NUMA node */
+#define VE_EINVAL_LIMITOPT	-516	/*!< Error number for invalid VE_LIMIT_OPT */
+#define VE_ERANGE_LIMITOPT	-517	/*!< Error number if limit is out of range */
+#define VEO_PROCESS_EXIST	515	/*!< Identifier for VEO API PID */
+#define VE_VALID_THREAD		516	/*!< Identifier for process/thread */
 #define VE_MAX_NODE	8		/*!< Maximum number of VE nodes */
 #define VE_PATH_MAX	4096		/*!< Maximum possible path length */
 #define VE_FILE_NAME	255		/*!< Maximum length of file name */
@@ -59,6 +63,7 @@
 #define MICROSEC_TO_SEC		1000000
 #define VE_NUMA_NUM	2		/* Maximum NUMA nodes in each VE node */
 #define MAX_CORE_IN_HEX	4		/* Maximum core value in HEX */
+#define MAX_SWAP_PROCESS 256
 
 #ifdef __cplusplus  
 extern "C" {  
@@ -427,6 +432,7 @@ struct ve_pidstat {
 					 * Flag to get statistics of single
 					 * thread (0) or the whole thread group (1)
 					 */
+	pid_t tgid;			/* Thread Group ID of process */
 };
 
 /**
@@ -652,9 +658,69 @@ struct ve_numa_stat {
  */
 enum create_task_flag {
 	DEFAULT_TASK_STRUCT = 0,	/*!< Default task_struct */
-	PERSERVE_TASK_STRUCT, 		/*!< Preserve task_struct when task exited */
-	SET_TASK_LIMIT,			/*!< Set process resource limits */
+	PRESERVE_TASK_STRUCT,		/*!< Preserve task_struct when task exited */
 };
+
+/**
+ * @brief Structure to get swap status informations of VE process
+ */
+struct ve_swap_status_struct {
+	pid_t pid;		/*!< VE process ID */
+	int proc_state;		/*!< VE process state */
+	int proc_substate;	/*!< VE process sub state */
+};
+
+/**
+ * @brief Structure to get swap status informations of VE node
+ */
+struct ve_swap_status_info {
+	int len;		/*!< 
+				 * the length of structure 
+				 * ve_swap_status_struct array 
+				 */
+	struct ve_swap_status_struct ve_swap_status[MAX_SWAP_PROCESS];	
+				/*!< 
+ 				 * Structure array of 
+ 				 * VE process state for PPS
+ 				 */
+};
+
+/**
+ * @brief Structure of VE process ID for PPS
+ */
+struct ve_swap_pids {
+	pid_t pid[MAX_SWAP_PROCESS + 1]; /*!< VE process ID array */
+	int process_num; 		 /*!< Number of PIDs */
+};
+
+/**
+ * @brief Structure to get swap informations of VE process
+ */
+struct ve_swap_struct {
+	pid_t pid;			 /*!< VE process ID */
+	int proc_state;			 /*!< VE process state */
+	int proc_substate;		 /*!< VE process sub state */
+	unsigned long long swapped_sz;	 /*!< swapped memory size of VE process*/
+	unsigned long long swappable_sz; /*!< swappable memory size of VE process*/
+};
+
+
+/**
+ * @brief Structure to get swap informations of VE node
+ */
+struct ve_swap_info {
+	int len;			/*!< the length of structure ve_swap_struct array */
+	struct ve_swap_struct ve_swap[MAX_SWAP_PROCESS];	/*!< Structure array of VE process state for PPS*/
+};
+
+/**
+ * @brief Information for swap about VE nodes
+ */
+struct ve_swap_node_info {
+	int node_num;				/*!< number of VE nodes*/
+	unsigned long long node_swapped_sz;	/*!< swapped memory size of VE nodes*/
+};
+
 
 int ve_match_envrn(char *);
 char *ve_create_sockpath(int);
@@ -691,6 +757,11 @@ int ve_numa_info(int, struct ve_numa_stat *);
 int ve_delete_dummy_task(int, pid_t);
 int ve_shm_list_or_remove(int , int , unsigned int *, char *);
 int ve_chk_exec_format(char *);
+int ve_swap_statusinfo(int, struct ve_swap_pids *, struct ve_swap_status_info *);
+int ve_swap_info(int, struct ve_swap_pids *, struct ve_swap_info *);
+int ve_swap_nodeinfo(int, struct ve_swap_node_info *);
+int ve_swap_out(int, struct ve_swap_pids *);
+int ve_swap_in(int, struct ve_swap_pids *);
 
 #ifdef __cplusplus 
 } //extern "C"

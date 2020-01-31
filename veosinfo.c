@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2017-2018 NEC Corporation
+ * Copyright (C) 2017-2019 NEC Corporation
  * This file is part of the VEOS information library.
  *
  * The VEOS information library is free software; you can redistribute it
@@ -38,6 +38,9 @@
 #include <sys/types.h>
 #include <libudev.h>
 #include <elf.h>
+#include <getopt.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 #include "veosinfo.h"
 #include "ve_sock.h"
 #include "veos_RPM.pb-c.h"
@@ -409,14 +412,331 @@ hndl_return:
 }
 
 /**
- * @brief Fetch the resource limit.
+ * @brief Convert 'string' to 'unsigned long long' and also handle
+ * out of range value of 'unsigned long long'
  *
- * @param ve_rlim resource limit
+ * @param limit_optarg [in] String value
+ * @param lim_val [out] Converted value in 'unsigned long long'
+ *
+ * @return 0 on success and -1 on failure
+ */
+int get_value(char *lim_optarg, unsigned long long *lim_val)
+{
+	int retval = 0;
+	char *optstr = NULL;
+
+	VE_RPMLIB_TRACE("Entering");
+
+	if (!lim_optarg || !lim_val) {
+		VE_RPMLIB_ERR("Wrong argument received:lim_optarg = %p," \
+				" lim_val = %p", lim_optarg, lim_val);
+		retval = -1;
+		goto out;
+	}
+	optstr = lim_optarg;
+	if (strncmp(optstr, "unlimited", sizeof("unlimited")) == 0) {
+		*lim_val = RLIM_INFINITY;
+		goto out;
+	}
+	while (*optstr >= '0' && *optstr <= '9')
+		*lim_val = (*lim_val) * 10 + (*optstr++ - '0');
+	VE_RPMLIB_DEBUG("Limit value spcified: %llu", *lim_val);
+	if (*optstr != '\0') {
+		VE_RPMLIB_ERR("Invalid limit value in optarg: %s", optstr);
+		retval = -1;
+	}
+	VE_RPMLIB_TRACE("Exiting");
+
+out:
+	return retval;
+}
+
+/**
+ * @brief Parse VE_LIMIT_OPT and fetch the resource limit
+ *
+ * @param limit_opt [in] Resource limit passed by user as environment
+ * variable in "VE_LIMIT_OPT"
+ * @param ve_rlim [out] To set the resource limit
+ *
+ * @return 0 on success and negative value on failure.
  */
 
-void get_ve_rlimit(struct rlimit *ve_rlim)
+int get_ve_limit_opt(char *limit_opt, struct rlimit *ve_rlim)
+{
+	int arg_c = 0;
+	int opt = 0, limit = 0;
+	int len_optind_arg = 0, len_optarg = 0;
+	int retval = VE_EINVAL_LIMITOPT;
+	bool repeat_lim[VE_RLIM_CNT] = {0};
+	unsigned long long lim_val = 0;
+	char *arg_v[VE_BUF_LEN] = {0};
+	char *token = NULL;
+
+	static const struct option longopts[] = {
+		{ "hardc",        required_argument, NULL, 1 },
+		{ "softc",     required_argument, NULL, 2 },
+		{ "hardd",      required_argument, NULL, 3 },
+		{ "softd",       required_argument, NULL, 4 },
+		{ "hardi",        required_argument, NULL, 5 },
+		{ "softi",       required_argument, NULL, 6 },
+		{ "hardm",      required_argument, NULL, 7 },
+		{ "softm",      required_argument, NULL, 8 },
+		{ "hards",    required_argument, NULL, 9 },
+		{ "softs",   required_argument, NULL, 10 },
+		{ "hardt",       required_argument, NULL, 11 },
+		{ "softt",     required_argument, NULL, 12 },
+		{ "hardv",      required_argument, NULL, 13 },
+		{ "softv",        required_argument, NULL, 14 },
+		{ NULL, 0, NULL, 0 }
+	};
+
+	VE_RPMLIB_TRACE("Entering");
+	if (!limit_opt || !ve_rlim) {
+		VE_RPMLIB_ERR("Wrong argument received:limit_opt = %p," \
+				" ve_rlim = %p", limit_opt, ve_rlim);
+		goto out;
+	}
+	token = strtok(limit_opt, " ");
+	arg_v[arg_c] = strndup("error", strlen("error"));
+	if (!arg_v[arg_c]) {
+		VE_RPMLIB_ERR("Failed to allocate memory");
+		goto out;
+	}
+	arg_c++;
+
+	/* Tokenize the value of VE_LIMIT_OPT environment variable */
+	while (token != NULL) {
+		arg_v[arg_c] = strndup(token, strlen(token));
+		if (!arg_v[arg_c]) {
+			VE_RPMLIB_ERR("Failed to allocate memory");
+			goto out;
+		}
+		token = strtok(NULL, " ");
+		arg_c++;
+	}
+	arg_v[arg_c] = '\0';
+	optind = 1;
+	/* Check the option specified with VE_LIMIT_OPT */
+	while ((opt = getopt_long(arg_c, arg_v, "+:c:d:i:m:s:t:v:",
+					longopts, NULL)) != -1) {
+		/* If valid option is specified and no option
+		 * argument is missing */
+		if (opt != '?' && opt != ':') {
+			lim_val = 0;
+			retval = get_value(optarg, &lim_val);
+			if (0 > retval) {
+				VE_RPMLIB_ERR("Error in value conversion");
+				retval = (VE_EINVAL_LIMITOPT);
+				goto out_err;
+			}
+			retval = VE_EINVAL_LIMITOPT;
+		}
+		/* Validate the resource limit values*/
+		if (opt == 'c' || opt == 'd' || opt == 'i' ||
+				opt == 'm' || opt == 's' ||
+				opt == 't' || opt == 'v') {
+			len_optind_arg = strlen(arg_v[optind - 1]);
+			len_optarg = strlen(optarg);
+			if (strncmp(arg_v[optind-1], optarg,
+						(len_optind_arg > len_optarg ?
+						len_optind_arg : len_optarg)))
+				goto out_err;
+		}
+		/* Validate RLIMIT_CPU resource limit's minimum value*/
+		if ((lim_val == 0) && ((opt == 't') || (opt == SOFTT)))
+			lim_val = 1;
+		/*Resource limit value should not be greater than
+		* than MAX_RESOURCE_LIMIT for c, d, m, s and
+		* v resources */
+		if (opt != HARDI && opt != SOFTI &&
+			opt != HARDT && opt != SOFTT &&
+			opt != 'i' && opt != 't' &&
+			optarg != NULL &&
+			strncmp(optarg, "unlimited", sizeof("unlimited"))) {
+			if (lim_val > MAX_RESOURCE_LIMIT) {
+				VE_RPMLIB_DEBUG("Resource limit out of range");
+				retval = VE_ERANGE_LIMITOPT;
+				goto out_err;
+			}
+			lim_val = lim_val * KB;
+		}
+		/* Only consider the first value if the same resource limit
+		 * mentioned repeatedly */
+		if (opt < VE_RLIM_CNT) {
+			if (!repeat_lim[opt])
+				repeat_lim[opt] = 1;
+			else
+				continue;
+		}
+		switch (opt) {
+		case 1:
+			ve_rlim[RLIMIT_CORE].rlim_max = lim_val;
+			break;
+		case 2:
+			ve_rlim[RLIMIT_CORE].rlim_cur = lim_val;
+			break;
+		case 3:
+			ve_rlim[RLIMIT_DATA].rlim_max = lim_val;
+			break;
+		case 4:
+			ve_rlim[RLIMIT_DATA].rlim_cur = lim_val;
+			break;
+		case 5:
+			ve_rlim[RLIMIT_SIGPENDING].rlim_max = lim_val;
+			break;
+		case 6:
+			ve_rlim[RLIMIT_SIGPENDING].rlim_cur = lim_val;
+			break;
+		case 7:
+			ve_rlim[RLIMIT_RSS].rlim_max = lim_val;
+			break;
+		case 8:
+			ve_rlim[RLIMIT_RSS].rlim_cur = lim_val;
+			break;
+		case 9:
+			ve_rlim[RLIMIT_STACK].rlim_max = lim_val;
+			break;
+		case 10:
+			ve_rlim[RLIMIT_STACK].rlim_cur = lim_val;
+			break;
+		case 11:
+			ve_rlim[RLIMIT_CPU].rlim_max = lim_val;
+			break;
+		case 12:
+			ve_rlim[RLIMIT_CPU].rlim_cur = lim_val;
+			break;
+		case 13:
+			ve_rlim[RLIMIT_AS].rlim_max = lim_val;
+			break;
+		case 14:
+			ve_rlim[RLIMIT_AS].rlim_cur = lim_val;
+			break;
+		case 'c':
+			if (!repeat_lim[SOFTC]) {
+				ve_rlim[RLIMIT_CORE].rlim_cur = lim_val;
+				repeat_lim[SOFTC] = 1;
+			}
+			if (!repeat_lim[HARDC]) {
+				ve_rlim[RLIMIT_CORE].rlim_max = lim_val;
+				repeat_lim[HARDC] = 1;
+			}
+			break;
+		case 'd':
+			if (!repeat_lim[SOFTD]) {
+				ve_rlim[RLIMIT_DATA].rlim_cur = lim_val;
+				repeat_lim[SOFTD] = 1;
+			}
+			if (!repeat_lim[HARDD]) {
+				ve_rlim[RLIMIT_DATA].rlim_max = lim_val;
+				repeat_lim[HARDD] = 1;
+			}
+			break;
+		case 'i':
+			if (!repeat_lim[SOFTI]) {
+				ve_rlim[RLIMIT_SIGPENDING].rlim_cur = lim_val;
+				repeat_lim[SOFTI] = 1;
+			}
+			if (!repeat_lim[HARDI]) {
+				ve_rlim[RLIMIT_SIGPENDING].rlim_max = lim_val;
+				repeat_lim[HARDI] = 1;
+			}
+			break;
+		case 'm':
+			if (!repeat_lim[SOFTM]) {
+				ve_rlim[RLIMIT_RSS].rlim_cur = lim_val;
+				repeat_lim[SOFTM] = 1;
+			}
+			if (!repeat_lim[HARDM]) {
+				ve_rlim[RLIMIT_RSS].rlim_max = lim_val;
+				repeat_lim[HARDM] = 1;
+			}
+			break;
+		case 's':
+			if (!repeat_lim[SOFTS]) {
+				ve_rlim[RLIMIT_STACK].rlim_cur = lim_val;
+				repeat_lim[SOFTS] = 1;
+			}
+			if (!repeat_lim[HARDS]) {
+				ve_rlim[RLIMIT_STACK].rlim_max = lim_val;
+				repeat_lim[HARDS] = 1;
+			}
+			break;
+		case 't':
+			if (!repeat_lim[SOFTT]) {
+				ve_rlim[RLIMIT_CPU].rlim_cur = lim_val;
+				repeat_lim[SOFTT] = 1;
+			}
+			if (!repeat_lim[HARDT]) {
+				ve_rlim[RLIMIT_CPU].rlim_max = lim_val;
+				repeat_lim[HARDT] = 1;
+			}
+			break;
+		case 'v':
+			if (!repeat_lim[SOFTV]) {
+				ve_rlim[RLIMIT_AS].rlim_cur = lim_val;
+				repeat_lim[SOFTV] = 1;
+			}
+			if (!repeat_lim[HARDV]) {
+				ve_rlim[RLIMIT_AS].rlim_max = lim_val;
+				repeat_lim[HARDV] = 1;
+			}
+			break;
+		case '?':
+			VE_RPMLIB_ERR("Unrecognized option");
+			goto out_err;
+		case ':':
+			VE_RPMLIB_ERR("Missing option argument");
+			goto out_err;
+		}
+	}
+	/* For error checking, if any value is specified without any option */
+	if (arg_v[optind]) {
+		VE_RPMLIB_ERR("Invalid Value: %s", arg_v[optind]);
+		retval = VE_EINVAL_LIMITOPT;
+		goto out_err;
+	}
+	/* To validate that hard limit should be greater than its soft limit */
+	for (limit = 0; limit < RLIM_NLIMITS; limit++) {
+		if (ve_rlim[limit].rlim_cur > ve_rlim[limit].rlim_max) {
+			VE_RPMLIB_DEBUG("lim: %d, soft lim: %llu, hard lim:" \
+					" %llu", limit, ve_rlim[limit].rlim_cur,
+					ve_rlim[limit].rlim_max);
+			VE_RPMLIB_ERR("Soft limit is greater than hard limit");
+			goto out_err;
+		}
+		VE_RPMLIB_DEBUG("limit: %d, soft lim: %llu, hard lim: %llu",
+				limit, ve_rlim[limit].rlim_cur,
+				ve_rlim[limit].rlim_max);
+	}
+	retval = 0;
+	goto out;
+out_err:
+	VE_RPMLIB_ERR("Invalid input in VE_LIMIT_OPT");
+out:
+	arg_c--;
+	while (arg_c >= 0) {
+		free(arg_v[arg_c]);
+		arg_c--;
+	}
+	VE_RPMLIB_TRACE("Exiting");
+	return retval;
+}
+
+/**
+ * @brief Fetch the resource limit.
+ *
+ * @param ve_rlim[out] resource limit
+ *
+ * @return 0 on success and negative value on failure.
+ */
+
+int get_ve_rlimit(struct rlimit *ve_rlim)
 {
 	int resource = 0;
+	int limit_opt_length = 0;
+	int retval = 0;
+	char *limit_opt = NULL;
+	struct rlimit *limit = ve_rlim;
 
 	VE_RPMLIB_TRACE("Entering");
 	while (resource < RLIM_NLIMITS) {
@@ -435,16 +755,33 @@ void get_ve_rlimit(struct rlimit *ve_rlim)
 			case RLIMIT_NPROC:
 			case RLIMIT_RTTIME:
 				getrlimit(resource, ve_rlim);
-				ve_rlim++;
-				resource++;
 				break;
 			default:
-				ve_rlim++;
-				resource++;
 				break;
 		}
+		ve_rlim++;
+		resource++;
 	}
+	ve_rlim = limit;
+	/* Check for VE_LIMIT_OPT environment variable */
+	limit_opt = getenv("VE_LIMIT_OPT");
+	if (limit_opt) {
+		limit_opt_length = strlen(limit_opt);
+		char tmp[limit_opt_length];
+
+		memcpy(tmp, limit_opt, limit_opt_length);
+		tmp[limit_opt_length] = '\0';
+
+		/* Parse the VE_LIMIT_OPT environment variable */
+		retval = get_ve_limit_opt(tmp, ve_rlim);
+		if (retval < 0) {
+			VE_RPMLIB_ERR("VE_LIMIT_OPT parsing failed");
+			goto out;
+		}
+	}
+out:
 	VE_RPMLIB_TRACE("Exiting");
+	return retval;
 }
 
 /**
@@ -515,7 +852,7 @@ int ve_create_process(int nodeid, int pid, int flag, int numa_num,
 	struct stat sb = {0};
 	int fd = -1;
 
-	VE_RPMLIB_TRACE("Entering");
+	VE_RPMLIB_TRACE("Entering : %s", __func__);
 	errno = 0;
 	/* Create the socket path corresponding to received VE node
 	*/
@@ -558,11 +895,15 @@ int ve_create_process(int nodeid, int pid, int flag, int numa_num,
 		close(fd);
 		goto hndl_return1;
 	}
-	if (SET_TASK_LIMIT == flag) {
-		memset(ve_create_proc.ve_rlim, -1,
-			sizeof(ve_create_proc.ve_rlim));
-		get_ve_rlimit(ve_create_proc.ve_rlim);
+	memset(ve_create_proc.ve_rlim, -1,
+		sizeof(ve_create_proc.ve_rlim));
+	/* To set the resource limit */
+	retval = get_ve_rlimit(ve_create_proc.ve_rlim);
+	if (retval < 0) {
+		VE_RPMLIB_ERR("Failed to set resource limit");
+		goto hndl_return1;
 	}
+
 	ve_create_proc.vedl_fd = fd;
 	ve_create_proc.flag = flag;
 	ve_create_proc.numa_num = numa_num;
@@ -792,11 +1133,16 @@ int ve_check_pid(int nodeid, int pid)
 		goto abort;
 	}
 	retval = res->rpm_retval;
-	if (0 != retval) {
+	if (0 == retval	|| VE_VALID_THREAD == retval) {
+		VE_RPMLIB_DEBUG("Received PID (%d) from VEOS and retval %d",
+				pid, retval);
+		errno = 0;
+	} else if (VEO_PROCESS_EXIST == retval) {
+		VE_RPMLIB_DEBUG("VEOS returned = %d", retval);
+		errno = -ESRCH;
+	} else
 		VE_RPMLIB_ERR("Received return value from veos= %d", retval);
 		errno = -(retval);
-	}
-	VE_RPMLIB_DEBUG("Received message from VEOS and retval = %d", retval);
 	goto hndl_return4;
 abort:
 	close(sock_fd);
@@ -2643,6 +2989,7 @@ int ve_pidstat_info(int nodeid, pid_t pid, struct ve_pidstat *ve_pidstat_req)
 	ve_pidstat_req->rss = lib_pidstat.rss;
 	strncpy(ve_pidstat_req->cmd, lib_pidstat.cmd, VE_FILE_NAME);
 	ve_pidstat_req->start_time = lib_pidstat.start_time;
+	ve_pidstat_req->tgid = lib_pidstat.tgid;
 	VE_RPMLIB_DEBUG("Received message from VEOS and values are" \
 			" as follows:state = %c\tprocessor = %d\t" \
 			" priority = %ld\tnice = %ld\tpolicy = %u\t"	\
@@ -5225,7 +5572,7 @@ int ve_chk_exec_format(char *ext_file)
 	VE_RPMLIB_TRACE("Entering");
 	errno = 0;
 
-	if(!ext_file) {
+	if (!ext_file) {
 		VE_RPMLIB_ERR("Wrong argument received: ext_file = %p",
 				ext_file);
 		errno = EINVAL;
@@ -5276,4 +5623,245 @@ end:
 	VE_RPMLIB_TRACE("Exiting");
 	errno = -retval;
 	return retval;
+}
+
+/**
+ * @brief This function is request send to veos,
+ *	  and recive from veos
+ *
+ * @param nodeid[in] VE node ID
+ * @param subcmd sub command to send
+ * @param sendmsg[in] message to send
+ * @param sendmsg_len[in] the length of the message to send
+ * @param recv_buf[out] buffer to store the received message
+ * @param recv_bufsize[in] the size of the buffer to receive a message
+ * @return 0 on success and negative value on failure
+ */
+static int ve_message_send_receive(int nodeid, int subcmd, void *sendmsg,
+	size_t sendmsg_len, void *recv_buf, size_t recv_bufsize)
+{
+	int retval = -1;
+	int sock_fd = -1;
+	int pack_msg_len = -1;
+	char *ve_sock_name = NULL;
+	uint8_t *unpack_buf_recv = NULL;
+	void *pack_buf_send = NULL;
+
+	VelibConnect request = VELIB_CONNECT__INIT;
+	VelibConnect *res;
+
+	VE_RPMLIB_TRACE("Entering");
+
+	request.cmd_str = RPM_QUERY;
+	request.has_subcmd_str = true;
+	request.subcmd_str = subcmd;
+	request.has_rpm_pid = true;
+	request.rpm_pid = getpid();
+	if (sendmsg) {
+		request.has_rpm_msg = true;
+		request.rpm_msg.data = sendmsg;
+		request.rpm_msg.len = sendmsg_len;
+	} else {
+		request.has_rpm_msg = false;
+	}
+	errno = 0;
+
+	/*
+	 * Create the socket path corresponding to received VE node
+	 */
+	ve_sock_name = ve_create_sockpath(nodeid);
+	if (!ve_sock_name) {
+		VE_RPMLIB_ERR("Failed to create socket path for VE: %s",
+				strerror(errno));
+		goto hndl_return;
+	}
+
+	/*
+	 * Create the socket connection corresponding to socket path
+	 */
+	sock_fd = velib_sock(ve_sock_name);
+	if (-1 == sock_fd) {
+		VE_RPMLIB_ERR("Failed to create socket:%s, error: %s",
+				ve_sock_name, strerror(errno));
+		goto hndl_free_sock;
+	} else if (-2 == sock_fd) {
+		goto abort;
+	}
+
+	/* Get the request message size to send to VEOS */
+	pack_msg_len = velib_connect__get_packed_size(&request);
+	if (pack_msg_len <= 0) {
+		VE_RPMLIB_ERR("Failed to get size to pack message");
+		fprintf(stderr, "Failed to get size to pack message\n");
+		goto abort;
+	}
+
+	pack_buf_send = malloc(pack_msg_len);
+	if (!pack_buf_send) {
+		VE_RPMLIB_ERR("Memory allocation failed: %s",
+				strerror(errno));
+		goto hndl_close_sock;
+	}
+	memset(pack_buf_send, '\0', pack_msg_len);
+
+	/* Pack the message to send to VEOS */
+	retval = velib_connect__pack(&request, pack_buf_send);
+	if (retval != pack_msg_len) {
+		VE_RPMLIB_ERR("Failed to pack message");
+		fprintf(stderr, "Failed to pack message\n");
+		goto abort;
+	}
+
+	/*
+	 * Send the IPC message to VEOS and wait for the acknowledgement
+	 * from VEOS
+	 */
+	retval = velib_send_cmd(sock_fd, pack_buf_send, pack_msg_len);
+	if (retval != pack_msg_len) {
+		VE_RPMLIB_ERR("Failed to send message: %d bytes written",
+								retval);
+		retval = -ECANCELED;
+		goto hndl_free_buff;
+	}
+	VE_RPMLIB_DEBUG("Send data successfully to VEOS and "
+						"waiting to receive....");
+	unpack_buf_recv = malloc(MAX_PROTO_MSG_SIZE);
+	if (!unpack_buf_recv) {
+		VE_RPMLIB_ERR("Memory allocation failed: %s",
+				strerror(errno));
+		retval = -ECANCELED;
+		goto hndl_free_buff;
+	}
+
+	/*
+	 * Receive the IPC message from VEOS
+	 */
+	retval = velib_recv_cmd(sock_fd, unpack_buf_recv, MAX_PROTO_MSG_SIZE);
+	VE_RPMLIB_DEBUG("Data received from VEOS %d bytes", retval);
+
+	/* Unpack the data received from VEOS */
+	res = velib_connect__unpack(NULL, retval,
+					(const uint8_t *)(unpack_buf_recv));
+	if (!res) {
+		VE_RPMLIB_ERR("Failed to unpack message: %d", retval);
+		fprintf(stderr, "Failed to unpack message\n");
+		goto abort;
+	}
+
+	if (recv_buf) {
+		if (!res->has_rpm_msg) {
+			VE_RPMLIB_ERR("No data in the received data",
+				res->rpm_msg.len, recv_bufsize);
+			fprintf(stderr, "No data in the received data\n");
+			goto abort;
+		}
+		if (res->rpm_msg.len > recv_bufsize) {
+			VE_RPMLIB_ERR("The length of the received message is too long: %d",
+				res->rpm_msg.len);
+			fprintf(stderr, "The length of the received message too long\n");
+			goto abort;
+		}
+		memcpy(recv_buf, res->rpm_msg.data, recv_bufsize);
+	}
+
+	retval = res->rpm_retval;
+	goto hndl_free_unpacked_msg;
+abort:
+	close(sock_fd);
+	abort();
+hndl_free_unpacked_msg:
+	velib_connect__free_unpacked(res, NULL);
+	free(unpack_buf_recv);
+hndl_free_buff:
+	free(pack_buf_send);
+hndl_close_sock:
+	close(sock_fd);
+hndl_free_sock:
+	free(ve_sock_name);
+hndl_return:
+	VE_RPMLIB_TRACE("Exiting");
+	return retval;
+}
+
+/**
+ * @brief This function is used to get the swapped memory size
+ *	  from VEOS for the given VE process id.
+ *
+ * @param nodeid[in] VE node ID
+ * @param ve_swap_node [out] Structure to get information
+ *			     for swap about VE nodes
+ * @return 0 on success and negative value on failure
+ */
+int ve_swap_nodeinfo(int nodeid, struct ve_swap_node_info *ve_swap_node)
+{
+	return ve_message_send_receive(nodeid, VE_SWAP_NODEINFO, NULL, 0,
+			ve_swap_node, sizeof(struct ve_swap_node_info));
+}
+
+/**
+ * @brief This function is used to get the swap status information
+ *	  from VEOS for the given VE process id.
+ *
+ * @param nodeid[in] VE node ID
+ * @param pids [in] Structre that contain VE processID array
+ * @param ve_swap_status [out] Structure to get status information
+ *			       of swap about VE process
+ * @return 0 on success and negative value on failure
+ */
+int ve_swap_statusinfo(int nodeid, struct ve_swap_pids *pids,
+			struct ve_swap_status_info *ve_swap_status)
+{
+	return ve_message_send_receive(nodeid, VE_SWAP_STATUSINFO,
+			pids, sizeof(struct ve_swap_pids),
+			ve_swap_status, sizeof(struct ve_swap_status_info));
+}
+
+/**
+ * @brief This function is used to get the swap information
+ *	  from VEOS for the given VE process id.
+ *
+ * @param nodeid[in] VE node ID
+ * @param pids [in] Structre that contain VE processID array
+ * @param ve_swap [out] Structure to get information of
+ *			swap about VE process.
+ *
+ * @return 0 on success and negative value on failure
+ */
+int ve_swap_info(int nodeid, struct ve_swap_pids *pids,
+			struct ve_swap_info *ve_swap)
+{
+	return ve_message_send_receive(nodeid, VE_SWAP_INFO,
+				pids, sizeof(struct ve_swap_pids),
+				ve_swap, sizeof(struct ve_swap_info));
+}
+
+/**
+ * @brief This function is used to request for VEOS to swap out
+ *	  of the given VE process id.
+ *
+ * @param nodeid[in] VE node ID
+ * @param pids [in] Structre that contain VE processID array
+ *
+ * @return 0 on success and negative value on failure
+ */
+int ve_swap_out(int nodeid, struct ve_swap_pids *pids)
+{
+	return ve_message_send_receive(nodeid, VE_SWAP_OUT,
+				pids, sizeof(struct ve_swap_pids),
+				NULL, 0);
+}
+
+/**
+ * @brief This function is used to request for VEOS to swap in
+ *	  of the given VE process id.
+ *
+ * @param nodeid[in] VE node ID
+ * @param pids [in] Structre that contain VE processID array
+ * @return 0 on success and negative value on failure
+ */
+int ve_swap_in(int nodeid, struct ve_swap_pids *pids)
+{
+	return ve_message_send_receive(nodeid, VE_SWAP_IN,
+				pids, sizeof(struct ve_swap_pids),
+				NULL, 0);
 }
