@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2017-2019 NEC Corporation
+ * Copyright (C) 2020 NEC Corporation
  * This file is part of the VEOS information library.
  *
  * The VEOS information library is free software; you can redistribute it
@@ -41,6 +41,7 @@
 #include <getopt.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
 #include "veosinfo.h"
 #include "ve_sock.h"
 #include "veos_RPM.pb-c.h"
@@ -767,16 +768,17 @@ int get_ve_rlimit(struct rlimit *ve_rlim)
 	limit_opt = getenv("VE_LIMIT_OPT");
 	if (limit_opt) {
 		limit_opt_length = strlen(limit_opt);
-		char tmp[limit_opt_length];
+		/* If VE_LIMIT_OPT=<empty> */
+		if(limit_opt_length) {
+			char tmp[limit_opt_length];
 
-		memcpy(tmp, limit_opt, limit_opt_length);
-		tmp[limit_opt_length] = '\0';
-
-		/* Parse the VE_LIMIT_OPT environment variable */
-		retval = get_ve_limit_opt(tmp, ve_rlim);
-		if (retval < 0) {
-			VE_RPMLIB_ERR("VE_LIMIT_OPT parsing failed");
-			goto out;
+			memcpy(tmp, limit_opt, limit_opt_length);
+			tmp[limit_opt_length] = '\0';
+			retval = get_ve_limit_opt(tmp, ve_rlim);
+			if (retval < 0) {
+				VE_RPMLIB_ERR("VE_LIMIT_OPT parsing failed");
+				goto out;
+			}
 		}
 	}
 out:
@@ -2799,7 +2801,8 @@ int ve_pidstatus_info(int nodeid, pid_t pid,
 	ve_pidstatus_req->sigignore = pidstatus.sigignore;
 	ve_pidstatus_req->sigcatch = pidstatus.sigcatch;
 	ve_pidstatus_req->sigpnd = pidstatus.sigpnd;
-	strncpy(ve_pidstatus_req->cmd, pidstatus.cmd, VE_FILE_NAME);
+	strncpy(ve_pidstatus_req->cmd, pidstatus.cmd, FILENAME + 1);
+        ve_pidstatus_req->cmd[FILENAME + 1] = '\0';
 
 	VE_RPMLIB_DEBUG("Received message from VEOS and values are" \
 			" as follows:ve_pidstatus_req->nvcsw = %lu,  " \
@@ -2987,7 +2990,8 @@ int ve_pidstat_info(int nodeid, pid_t pid, struct ve_pidstat *ve_pidstat_req)
 	ve_pidstat_req->kstesp = lib_pidstat.kstesp;
 	ve_pidstat_req->ksteip = lib_pidstat.ksteip;
 	ve_pidstat_req->rss = lib_pidstat.rss;
-	strncpy(ve_pidstat_req->cmd, lib_pidstat.cmd, VE_FILE_NAME);
+	strncpy(ve_pidstat_req->cmd, lib_pidstat.cmd, FILENAME + 1);
+	ve_pidstat_req->cmd[FILENAME + 1] = '\0';
 	ve_pidstat_req->start_time = lib_pidstat.start_time;
 	ve_pidstat_req->tgid = lib_pidstat.tgid;
 	VE_RPMLIB_DEBUG("Received message from VEOS and values are" \

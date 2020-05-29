@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2017-2019 NEC Corporation
+ * Copyright (C) 2020 NEC Corporation
  * This file is part of the VEOS information library.
  *
  * The VEOS information library is free software; you can redistribute it
@@ -35,6 +35,7 @@
 #include <sys/shm.h>
 #include <limits.h>
 #include <sys/mman.h>
+
 #define VE_EINVAL_COREID	-514	/*!< Error number for invalid cores */
 #define VE_EINVAL_NUMAID	-515	/*!< Error number for invalid NUMA node */
 #define VE_EINVAL_LIMITOPT	-516	/*!< Error number for invalid VE_LIMIT_OPT */

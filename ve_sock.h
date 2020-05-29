@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2017-2019 NEC Corporation
+ * Copyright (C) 2020 NEC Corporation
  * This file is part of the VEOS information library.
  *
  * The VEOS information library is free software; you can redistribute it
