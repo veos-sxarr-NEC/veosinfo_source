@@ -19,4 +19,6 @@ message velib_connect{
 					 * VE PID to get information from
 					 * VEOS modules
 					 */
+	optional bytes rpm_version = 7;	/*!< Library version
+					 */
 };

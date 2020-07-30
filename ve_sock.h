@@ -71,7 +71,8 @@ enum velib_cmdreq {
  * @brief command ID's used to communicate b/w RPM Library and VEOS
  */
 enum veos_msg_id {
-	RPM_QUERY
+	RPM_QUERY,
+	RPM_QUERY_COMPT = 56
 };
 
 int velib_sock(char *);

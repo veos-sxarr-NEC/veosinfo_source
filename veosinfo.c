@@ -49,6 +49,228 @@
 #include "veosinfo_internal.h"
 #include "veosinfo_comm.h"
 
+
+/**
+ * @brief This function is used to compare the versions.
+ *
+ * @param veos_ver[in] version number received from VEOS
+ * @param cmd_ver[in] version number of command library
+ *
+ * @return,
+ * -1 if veos version is smallar than command version
+ * 1 if veos version is greater than command version
+ * 0 if both veos and command version is same.
+ */
+int cmd_version_compare(char *veos_ver, char *cmd_ver)
+{
+	int veos_len = 0, cmd_len = 0;
+	int veos_num = 0, cmd_num = 0;
+	int vlv = 0, clv = 0;
+
+	veos_len = strlen(veos_ver);
+	VE_RPMLIB_DEBUG("VEOS version: %s  length: %d", veos_ver, veos_len);
+	cmd_len = strlen(cmd_ver);
+	VE_RPMLIB_DEBUG("Command version: %s  length: %d", cmd_ver,  cmd_len);
+	for (vlv = 0, clv = 0; (vlv < veos_len || clv < cmd_len);) {
+		/* Store each digit of 'veos_ver' in 'veos_num' one by one */
+		while (vlv < veos_len && veos_ver[vlv] != '.') {
+			veos_num = veos_num * 10 + (veos_ver[vlv] - '0');
+			vlv++;
+		}
+
+		/* Store each digit of 'cmd_ver' in 'cmd_num' one by one */
+		while (clv < cmd_len && cmd_ver[clv] != '.') {
+			cmd_num = cmd_num * 10 + (cmd_ver[clv] - '0');
+			clv++;
+		}
+
+		/* Now compare each digit of veos version with command
+		 * library version
+		 */
+
+		if (veos_num < cmd_num) {
+			VE_RPMLIB_DEBUG("veos version is older than veosinfo");
+			return -1;
+		}
+		if (cmd_num < veos_num) {
+			VE_RPMLIB_DEBUG("veos version is newer than veosinfo");
+			return 1;
+		}
+
+		veos_num = cmd_num = 0;
+		vlv++;
+		clv++;
+	}
+	VE_RPMLIB_DEBUG("veos version is equal to veosinfo");
+	return 0;
+}
+
+/**
+ * @brief This function is used to verify version compatibility
+ * between veos and command library (veosinfo).
+ *
+ * @param nodeid[in] VE node number
+ *
+ * @return 0 on success and -1 on failure
+ */
+int verify_version(int nodeid)
+{
+	int retval = -1;
+	int version = 0;
+	int sock_fd = -1;
+	int pack_msg_len = -1;
+	void *pack_buf_send = NULL;
+	uint8_t *unpack_buf_recv = NULL;
+	char *ve_sock_name = NULL;
+	char *veos_version = NULL;
+	VelibConnect *res = NULL;
+	VelibConnect request = VELIB_CONNECT__INIT;
+	ProtobufCBinaryData subreq_ver = {0};
+
+	VE_RPMLIB_TRACE("Entering");
+	errno = 0;
+
+	/* Create the socket path corresponding to received VE node */
+	ve_sock_name = ve_create_sockpath(nodeid);
+	if (!ve_sock_name) {
+		VE_RPMLIB_ERR("Failed to create socket path for VE: %s",
+				strerror(errno));
+		goto hndl_return;
+	}
+
+	/* Create the socket connection corresponding to socket path */
+	sock_fd = velib_sock(ve_sock_name);
+	if (-1 == sock_fd) {
+		VE_RPMLIB_ERR("Failed to create socket: %s, error: %s",
+				ve_sock_name, strerror(errno));
+		goto hndl_return_sock;
+	} else if (-2 == sock_fd)
+		goto abort;
+
+	request.cmd_str = RPM_QUERY_COMPT;
+	request.has_rpm_pid = true;
+	request.rpm_pid = getpid();
+	request.has_subcmd_str = true;
+	request.subcmd_str = -1;
+	request.has_rpm_version = true;
+	subreq_ver.data = (uint8_t *)VERSION_STRING;
+	subreq_ver.len = strlen(VERSION_STRING);
+	request.rpm_version = subreq_ver;
+
+	/* Get the request message size to send to VEOS */
+	pack_msg_len = velib_connect__get_packed_size(&request);
+	if (0 >= pack_msg_len) {
+		VE_RPMLIB_ERR("Failed to get size to pack message");
+		fprintf(stderr, "Failed to get size to pack message\n");
+		goto abort;
+	}
+
+	pack_buf_send = malloc(pack_msg_len);
+	if (!pack_buf_send) {
+		VE_RPMLIB_ERR("Memory allocation failed: %s", strerror(errno));
+		goto hndl_return1;
+	}
+	VE_RPMLIB_DEBUG("pack_msg_len = %d", pack_msg_len);
+	memset(pack_buf_send, '\0', pack_msg_len);
+
+	/* Pack the message to send to VEOS */
+	retval = velib_connect__pack(&request, pack_buf_send);
+	if (retval != pack_msg_len) {
+		VE_RPMLIB_ERR("Failed to pack message");
+		fprintf(stderr, "Failed to pack message\n");
+		goto abort;
+	}
+
+	/* Send the IPC message to VEOS and wait for the acknowledgment
+	 * from VEOS
+	 */
+	retval = velib_send_cmd(sock_fd, pack_buf_send, pack_msg_len);
+	if (retval != pack_msg_len) {
+		VE_RPMLIB_ERR("Failed to send message: %d bytes written",
+				retval);
+		goto hndl_return2;
+	}
+	VE_RPMLIB_DEBUG("Send data successfully to VEOS and" \
+			" waiting to receive....");
+
+	unpack_buf_recv = malloc(MAX_PROTO_MSG_SIZE);
+	if (!unpack_buf_recv) {
+		VE_RPMLIB_ERR("Memory allocation failed: %s",
+				strerror(errno));
+		goto hndl_return2;
+	}
+	memset(unpack_buf_recv, '\0', MAX_PROTO_MSG_SIZE);
+
+	/* Receive the IPC message from VEOS */
+	retval = velib_recv_cmd(sock_fd, unpack_buf_recv, MAX_PROTO_MSG_SIZE);
+	if (-1 == retval) {
+		VE_RPMLIB_ERR("Failed to receive message: %s",
+				strerror(errno));
+		goto hndl_return3;
+	}
+	VE_RPMLIB_DEBUG("Data received successfully from VEOS, now verify it.");
+
+	/* Unpack the data received from VEOS */
+	res = velib_connect__unpack(NULL, retval,
+			(const uint8_t *)(unpack_buf_recv));
+	if (!res) {
+		VE_RPMLIB_ERR("Failed to unpack message: %d", retval);
+		fprintf(stderr, "Failed to unpack message\n");
+		goto abort;
+	}
+
+	/* Check if version is received from veos */
+	if (res->has_rpm_version == false) {
+		VE_RPMLIB_ERR("veos is older than veosinfo (v%s)",
+				VERSION_STRING);
+		fprintf(stderr,
+			"Compatibility Error: veos (older than v2.6.0) and "
+				"veosinfo (v%s) are not compatible\n",
+					VERSION_STRING);
+		goto abort;
+	}
+	veos_version = malloc(res->rpm_version.len);
+	if (!veos_version) {
+		VE_RPMLIB_ERR("Memory allocation failed: %s",
+				strerror(errno));
+		goto hndl_return4;
+	}
+	memset(veos_version, '\0', res->rpm_version.len);
+	memcpy(veos_version, res->rpm_version.data, res->rpm_version.len);
+	/* Compare the veos version and command library version compatibility */
+	version = cmd_version_compare(veos_version, VERSION_STRING);
+	if (version == -1) {
+		VE_RPMLIB_ERR("veos (v%s) is older than veosinfo (v%s)",
+				veos_version, VERSION_STRING);
+		fprintf(stderr,
+			"Compatibility Error: veos (v%s) and "
+				"veosinfo (v%s) are not compatible\n",
+					veos_version, VERSION_STRING);
+		free(veos_version);
+		goto abort;
+	}
+	retval = 0;
+	goto hndl_return4;
+abort:
+	close(sock_fd);
+	abort();
+hndl_return4:
+	if(veos_version)
+		free(veos_version);
+	velib_connect__free_unpacked(res, NULL);
+hndl_return3:
+	free(unpack_buf_recv);
+hndl_return2:
+	free(pack_buf_send);
+hndl_return1:
+	close(sock_fd);
+hndl_return_sock:
+	free(ve_sock_name);
+hndl_return:
+	VE_RPMLIB_TRACE("Exiting");
+	return retval;
+}
+
 /**
  * @brief This function will check the value of VE node passed as environment
  * variable is a valid VE node or not
@@ -928,7 +1150,7 @@ int ve_create_process(int nodeid, int pid, int flag, int numa_num,
 	subreq.data = (uint8_t *)&ve_create_proc;
 	subreq.len = sizeof(struct velib_create_process);
 
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
 	request.subcmd_str = VE_CREATE_PROCESS;
 	request.has_rpm_pid = true;
@@ -1066,7 +1288,7 @@ int ve_check_pid(int nodeid, int pid)
 	} else if (-2 == sock_fd)
 		goto abort;
 
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
 	request.subcmd_str = VE_CHECKPID;
 	request.has_rpm_pid = true;
@@ -1212,7 +1434,7 @@ int ve_mem_info(int nodeid, struct ve_meminfo *ve_meminfo_req)
 	} else if (-2 == sock_fd)
 		goto abort;
 
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
 	request.subcmd_str = VE_MEM_INFO;
 	request.has_rpm_pid = true;
@@ -1417,7 +1639,7 @@ int ve_stat_info(int nodeid, struct ve_statinfo *ve_statinfo_req)
 	} else if (-2 == sock_fd)
 		goto abort;
 
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
 	request.subcmd_str = VE_STAT_INFO;
 	request.has_rpm_pid = true;
@@ -1592,7 +1814,7 @@ int ve_acct(int nodeid, char *filename)
 
 	request.has_subcmd_str = true;
 	request.subcmd_str = VE_ACCTINFO;
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_rpm_pid = true;
 	request.rpm_pid = getpid();
 
@@ -1755,7 +1977,7 @@ int ve_loadavg_info(int nodeid, struct ve_loadavg *ve_loadavg_req)
 	} else if (-2 == sock_fd)
 		goto abort;
 
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
 	request.subcmd_str = VE_LOAD_INFO;
 	request.has_rpm_pid = true;
@@ -2012,7 +2234,7 @@ int ve_sched_getaffinity(int nodeid, pid_t pid,
 	subreq.data = (uint8_t *)&ve_affinity;
 	subreq.len = sizeof(struct velib_affinity);
 
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
 	request.subcmd_str = VE_GET_AFFINITY;
 	request.has_rpm_pid = true;
@@ -2175,7 +2397,7 @@ int ve_sched_setaffinity(int nodeid, pid_t pid, size_t cpusetsize,
 	subreq.data = (uint8_t *)&ve_affinity;
 	subreq.len = sizeof(struct velib_affinity);
 
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
 	request.subcmd_str = VE_SET_AFFINITY;
 	request.has_rpm_pid = true;
@@ -2352,7 +2574,7 @@ int ve_prlimit(int nodeid, pid_t pid, int resource, struct rlimit *new_limit,
 	subreq.data = (uint8_t *)&ve_limit;
 	subreq.len = sizeof(struct velib_prlimit);
 
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
 	request.subcmd_str = VE_PRLIMIT;
 	request.has_rpm_pid = true;
@@ -2553,7 +2775,7 @@ int ve_map_info(int nodeid, pid_t pid, unsigned int *length, char *filename)
 	fileinfo.nodeid = nodeid;
 	subreq.data = (uint8_t *)&fileinfo;
 	subreq.len = sizeof(struct file_info);
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
 	request.subcmd_str = VE_MAP_INFO;
 	request.has_rpm_pid = true;
@@ -2709,7 +2931,7 @@ int ve_pidstatus_info(int nodeid, pid_t pid,
 	} else if (-2 == sock_fd)
 		goto abort;
 
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
 	request.subcmd_str = VE_PIDSTATUS_INFO;
 	request.has_rpm_pid = true;
@@ -2887,7 +3109,7 @@ int ve_pidstat_info(int nodeid, pid_t pid, struct ve_pidstat *ve_pidstat_req)
 	lib_pidstat.whole = ve_pidstat_req->whole;
 	subreq.data = (uint8_t *)&lib_pidstat;
 	subreq.len = sizeof(struct velib_pidstat);
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
 	request.subcmd_str = VE_PIDSTAT_INFO;
 	request.has_rpm_pid = true;
@@ -3090,7 +3312,7 @@ int ve_get_regvals(int nodeid, pid_t pid, int numregs, int *regid, uint64_t *reg
 
 	subreq.data = (uint8_t *)regid;
 	subreq.len = sizeof(int) * numregs;
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
 	request.subcmd_str = VE_GET_REGVALS;
 	request.has_rpm_pid = true;
@@ -3428,7 +3650,7 @@ int ve_pidstatm_info(int nodeid, pid_t pid, struct ve_pidstatm *ve_pidstatm_req)
 	} else if (-2 == sock_fd)
 		goto abort;
 
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
 	request.subcmd_str = VE_PIDSTATM_INFO;
 	request.has_rpm_pid = true;
@@ -3591,7 +3813,7 @@ int ve_get_rusage(int nodeid, pid_t pid,
 	} else if (-2 == sock_fd)
 		goto abort;
 
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
 	request.subcmd_str = VE_GET_RUSAGE;
 	request.has_rpm_pid = true;
@@ -4968,7 +5190,7 @@ int ve_shm_info(int nodeid, int mode, int *key_id, bool *result,
 	}
 	subreq.data = (uint8_t *)&shm_info;
         subreq.len = sizeof(struct ve_shm_info);
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
 	request.subcmd_str = VE_SHM_INFO;
 	request.has_rpm_pid = true;
@@ -5140,7 +5362,7 @@ int ve_numa_info(int nodeid, struct ve_numa_stat *ve_numa)
 	} else if (-2 == sock_fd)
 		goto abort;
 
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
 	request.subcmd_str = VE_NUMA_INFO;
 	request.has_rpm_pid = true;
@@ -5285,7 +5507,7 @@ int ve_delete_dummy_task(int nodeid, pid_t pid)
 	} else if (-2 == sock_fd)
 		goto abort;
 
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
 	request.subcmd_str = VE_DEL_DUMMY_TASK;
 	request.has_rpm_pid = true;
@@ -5451,7 +5673,7 @@ int ve_shm_list_or_remove(int nodeid, int mode,
 	shm_info.nodeid = nodeid;
 	subreq.data = (uint8_t *)&shm_info;
 	subreq.len = sizeof(struct ve_shm_info);
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
 	request.subcmd_str = VE_SHM_INFO;
 	request.has_rpm_pid = true;
@@ -5656,7 +5878,7 @@ static int ve_message_send_receive(int nodeid, int subcmd, void *sendmsg,
 
 	VE_RPMLIB_TRACE("Entering");
 
-	request.cmd_str = RPM_QUERY;
+	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
 	request.subcmd_str = subcmd;
 	request.has_rpm_pid = true;
