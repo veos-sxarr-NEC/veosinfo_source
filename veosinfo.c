@@ -6091,3 +6091,22 @@ int ve_swap_in(int nodeid, struct ve_swap_pids *pids)
 				pids, sizeof(struct ve_swap_pids),
 				NULL, 0);
 }
+
+/**
+ * @brief This function requests VEOS to get 'cns' of VE processes
+ *        which are specified by 'veswap -n', and receives responce of it.
+ *
+ * @param nodeid[in] VE node ID
+ * @param pids[in] Structre that contains VE processID array
+ * @param cns_info[out] Structre that contains 'cns' of VE processID array
+ *
+ * @return 0 on success and negative value on failure
+ */
+int
+ve_swap_get_cns(int nodeid, struct ve_swap_pids *pids,
+						struct ve_cns_info *cns_info)
+{
+	return ve_message_send_receive(nodeid, VE_SWAP_GET_CNS,
+				pids, sizeof(struct ve_swap_pids),
+				cns_info, sizeof(struct ve_cns_info));
+}

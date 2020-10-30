@@ -64,6 +64,7 @@ enum velib_cmdreq {
 	VE_SWAP_NODEINFO,
 	VE_SWAP_OUT,
 	VE_SWAP_IN,
+	VE_SWAP_GET_CNS,
 	VE_RPM_INVALID = -1
 };
 
