@@ -249,6 +249,16 @@ int verify_version(int nodeid)
 		free(veos_version);
 		goto abort;
 	}
+	retval = res->rpm_retval;
+	if (VE_EINVAL_DEVICE == retval) {
+		VE_RPMLIB_ERR("Compatibility Error: veos (v%s) and "
+			"veosinfo (v%s) are not compatible due to "
+			"unsupported device",veos_version, VERSION_STRING);
+		fprintf(stderr,
+			"Compatibility Error: unsupported device\n");
+		free(veos_version);
+		goto abort;
+	}
 	retval = 0;
 	goto hndl_return4;
 abort:
@@ -4119,7 +4129,7 @@ int get_ve_node(int *dev_num, int *total_dev_count)
 		/* Read VE specific directory from '/dev' device directory
 		 */
 		errno = 0;
-		while ((ent = readdir(dir)) != NULL) {
+		while (((ent = readdir(dir)) != NULL) && (dev_count < VE_MAX_NODE )) {
 			/* Read the VE device specific directory entries only
 			 */
 			if (strncmp(ent->d_name, VE_DEVICE_NAME,

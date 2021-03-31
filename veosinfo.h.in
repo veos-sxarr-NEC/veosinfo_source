@@ -66,6 +66,7 @@
 #define MAX_CORE_IN_HEX	4		/* Maximum core value in HEX */
 #define MAX_SWAP_PROCESS 256
 #define NS_DIV 2
+#define VE_EINVAL_DEVICE -2      /*!< Error number for unsupported device */
 
 #ifdef __cplusplus  
 extern "C" {  
