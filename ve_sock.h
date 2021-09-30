@@ -65,6 +65,8 @@ enum velib_cmdreq {
 	VE_SWAP_OUT,
 	VE_SWAP_IN,
 	VE_SWAP_GET_CNS,
+        VE_VEOSCTL_GET_PARAM,
+        VE_VEOSCTL_SET_PARAM,
 	VE_RPM_INVALID = -1
 };
 

@@ -6120,3 +6120,299 @@ ve_swap_get_cns(int nodeid, struct ve_swap_pids *pids,
 				pids, sizeof(struct ve_swap_pids),
 				cns_info, sizeof(struct ve_cns_info));
 }
+
+/**
+ * @brief This function is used to get scheduler parameters such as
+ *        timer-interval and time-slice of veos for given VE node.
+ * @param nodeid [in]   VE node number
+ * @param vctl   [out]  Structure to get information about VEOS
+ *                      scheduler parameters
+ *
+ * @return 0 on success and -1 on failure
+ */
+int ve_veosctl_get_param(int nodeid, struct ve_veosctl_stat *vctl)
+{
+        int retval = -1;
+        int sock_fd = -1;
+        int pack_msg_len = -1;
+        void *pack_buf_send = NULL;
+        uint8_t *unpack_buf_recv = NULL;
+        char *ve_sock_name = NULL;
+        VelibConnect *res = NULL;
+        VelibConnect request = VELIB_CONNECT__INIT;
+
+        VE_RPMLIB_TRACE("Entering");
+        errno = 0;
+        /* Create the socket path corresponding to received VE node
+         */
+        ve_sock_name = ve_create_sockpath(nodeid);
+        if (!ve_sock_name) {
+                VE_RPMLIB_ERR("Failed to create socket path for VE: %s",
+                                strerror(errno));
+                goto hndl_return;
+        }
+        /* Create the socket connection corresponding to socket path
+         */
+        sock_fd = velib_sock(ve_sock_name);
+        if (-1 == sock_fd) {
+                VE_RPMLIB_ERR("Failed to create socket:%s, error: %s",
+                                ve_sock_name, strerror(errno));
+                goto hndl_return_sock;
+        } else if (-2 == sock_fd)
+                goto abort;
+
+        request.cmd_str = RPM_QUERY_COMPT;
+        request.has_subcmd_str = true;
+        request.subcmd_str = VE_VEOSCTL_GET_PARAM;
+        request.has_rpm_pid = true;
+        request.rpm_pid = getpid();
+
+        /* Get the request message size to send to VEOS */
+        pack_msg_len = velib_connect__get_packed_size(&request);
+        if (0 >= pack_msg_len) {
+                VE_RPMLIB_ERR("Failed to get size to pack message");
+                fprintf(stderr, "Failed to get size to pack message\n");
+                goto abort;
+        }
+        pack_buf_send = malloc(pack_msg_len);
+        if (!pack_buf_send) {
+                VE_RPMLIB_ERR("Memory allocation failed: %s",
+                                strerror(errno));
+                goto hndl_return1;
+        }
+        VE_RPMLIB_DEBUG("pack_msg_len = %d", pack_msg_len);
+        memset(pack_buf_send, '\0', pack_msg_len);
+
+        /* Pack the message to send to VEOS */
+        retval = velib_connect__pack(&request, pack_buf_send);
+        if (retval != pack_msg_len) {
+                VE_RPMLIB_ERR("Failed to pack message");
+                fprintf(stderr, "Failed to pack message\n");
+                goto abort;
+        }
+
+        /* Send the IPC message to VEOS and wait for the acknowledgement
+         * from VEOS
+         */
+        retval = velib_send_cmd(sock_fd, pack_buf_send, pack_msg_len);
+        if (retval != pack_msg_len) {
+                VE_RPMLIB_ERR("Failed to send message: %d bytes written",
+                                retval);
+                goto hndl_return2;
+        }
+        VE_RPMLIB_DEBUG("Send data successfully to VEOS and" \
+                                        " waiting to receive....");
+
+        unpack_buf_recv = malloc(MAX_PROTO_MSG_SIZE);
+        if (!unpack_buf_recv) {
+                VE_RPMLIB_ERR("Memory allocation failed: %s",
+                                strerror(errno));
+                goto hndl_return2;
+        }
+        memset(unpack_buf_recv, '\0', MAX_PROTO_MSG_SIZE);
+
+        /* Receive the IPC message from VEOS */
+        retval = velib_recv_cmd(sock_fd, unpack_buf_recv, MAX_PROTO_MSG_SIZE);
+        if (-1 == retval) {
+                VE_RPMLIB_ERR("Failed to receive message: %s",
+                                strerror(errno));
+                goto hndl_return3;
+        }
+        VE_RPMLIB_DEBUG("Data received successfully from VEOS, now verify it.");
+
+        /* Unpack the data received from VEOS */
+        res = velib_connect__unpack(NULL, retval,
+                        (const uint8_t *)(unpack_buf_recv));
+        if (!res) {
+                VE_RPMLIB_ERR("Failed to unpack message: %d", retval);
+                fprintf(stderr, "Failed to unpack message\n");
+                goto abort;
+        }
+        retval = res->rpm_retval;
+        /* Check if the desired return value is received
+         */
+        if (0 != retval) {
+                VE_RPMLIB_ERR("Received message verification failed.");
+                errno = -(retval);
+                goto hndl_return4;
+        }
+        /* Populate the structure used to store information, with the values
+         * received from VEOS
+         */
+        memcpy(vctl, res->rpm_msg.data, res->rpm_msg.len);
+
+        VE_RPMLIB_DEBUG("Message received successfully from VEOS" \
+                    " and retval = %d,timer-interval = %ld , timer-slice = %ld",
+		                  retval,vctl->timer_interval,vctl->time_slice);
+        goto hndl_return4;
+abort:
+        close(sock_fd);
+        abort();
+hndl_return4:
+        velib_connect__free_unpacked(res, NULL);
+hndl_return3:
+        free(unpack_buf_recv);
+hndl_return2:
+        free(pack_buf_send);
+hndl_return1:
+        close(sock_fd);
+hndl_return_sock:
+        free(ve_sock_name);
+hndl_return:
+        VE_RPMLIB_TRACE("Exiting");
+        return retval;
+}
+
+/**
+ * @brief This function is used to set scheduler parameters such as
+ *        timer-interval and time-slice of veos for given VE node.
+ *
+ * @param nodeid[in] VE node number.
+ * @param ve_sched_param[in] Structure to set information about
+ *                           VEOS scheduler parameters.
+ * @return 0 on success and -1 on failure
+ */
+int ve_veosctl_set_param(int nodeid,struct ve_veosctl_stat *ve_sched_param)
+{
+        int retval = -1;
+        int sock_fd = -1;
+        int pack_msg_len = -1;
+        void *pack_buf_send = NULL;
+        uint8_t *unpack_buf_recv = NULL;
+        char *ve_sock_name = NULL;
+        struct ve_veosctl_stat ve_vctl_param = {0};
+        VelibConnect *res = NULL;
+        ProtobufCBinaryData subreq = {0};
+        VelibConnect request = VELIB_CONNECT__INIT;
+
+        VE_RPMLIB_TRACE("Entering");
+        errno = 0;
+        if (!ve_sched_param) {
+                VE_RPMLIB_ERR("Wrong argument received: mask = %p",
+				                       ve_sched_param);
+                errno = EINVAL;
+                goto hndl_return;
+        }
+        /* Create the socket path corresponding to received VE node
+         */
+        ve_sock_name = ve_create_sockpath(nodeid);
+        if (!ve_sock_name) {
+                VE_RPMLIB_ERR("Failed to create socket path for VE: %s",
+                               strerror(errno));
+                goto hndl_return;
+        }
+        /* Create the socket connection corresponding to socket path
+         */
+        sock_fd = velib_sock(ve_sock_name);
+        if (-1 == sock_fd) {
+                VE_RPMLIB_ERR("Failed to create socket:%s, error: %s",
+                                ve_sock_name, strerror(errno));
+                goto hndl_return_sock;
+        } else if (-2 == sock_fd)
+                goto abort;
+
+        memcpy(&ve_vctl_param, ve_sched_param, sizeof(struct ve_veosctl_stat));
+
+        subreq.data = (uint8_t *)&ve_vctl_param;
+        subreq.len = sizeof(struct ve_veosctl_stat);
+
+        request.cmd_str = RPM_QUERY_COMPT;
+        request.has_subcmd_str = true;
+        request.subcmd_str = VE_VEOSCTL_SET_PARAM;
+        request.has_rpm_pid = true;
+        request.rpm_pid = getpid();
+        request.has_rpm_msg = true;
+        request.rpm_msg = subreq;
+        /* Get the request message size to send to VEOS */
+        pack_msg_len = velib_connect__get_packed_size(&request);
+        if (0 >= pack_msg_len) {
+                VE_RPMLIB_ERR("Failed to get size to pack message");
+                fprintf(stderr, "Failed to get size to pack message\n");
+                goto abort;
+        }
+        pack_buf_send = malloc(pack_msg_len);
+        if (!pack_buf_send) {
+                VE_RPMLIB_ERR("Memory allocation failed: %s",
+                                strerror(errno));
+                goto hndl_return1;
+        }
+        VE_RPMLIB_DEBUG("pack_msg_len = %d", pack_msg_len);
+        memset(pack_buf_send, '\0', pack_msg_len);
+
+        /* Pack the message to send to VEOS */
+        retval = velib_connect__pack(&request, pack_buf_send);
+        if (retval != pack_msg_len) {
+                VE_RPMLIB_ERR("Failed to pack message");
+                fprintf(stderr, "Failed to pack message\n");
+                goto abort;
+        }
+
+        /* Send the IPC message to VEOS and wait for the acknowledgement
+         * from VEOS
+         */
+        retval = velib_send_cmd(sock_fd, pack_buf_send, pack_msg_len);
+        if (retval != pack_msg_len) {
+                VE_RPMLIB_ERR("Failed to send message: %d bytes written",
+                                retval);
+                goto hndl_return2;
+        }
+         VE_RPMLIB_DEBUG("Send data successfully to VEOS and" \
+                                        " waiting to receive....");
+
+        unpack_buf_recv = malloc(MAX_PROTO_MSG_SIZE);
+        if (!unpack_buf_recv) {
+                VE_RPMLIB_ERR("Memory allocation failed: %s",
+                                strerror(errno));
+                goto hndl_return2;
+        }
+        memset(unpack_buf_recv, '\0', MAX_PROTO_MSG_SIZE);
+        /* Receive the IPC message from VEOS
+         */
+        retval = velib_recv_cmd(sock_fd, unpack_buf_recv, MAX_PROTO_MSG_SIZE);
+        if (-1 == retval) {
+                VE_RPMLIB_ERR("Failed to receive message: %s",
+                                strerror(errno));
+                goto hndl_return3;
+        }
+        VE_RPMLIB_DEBUG("Data received successfully from VEOS, now verify it.");
+
+        /* Unpack the data received from VEOS */
+        res = velib_connect__unpack(NULL, retval,
+                        (const uint8_t *)(unpack_buf_recv));
+        if (!res) {
+                VE_RPMLIB_ERR("Failed to unpack message: %d", retval);
+                fprintf(stderr, "Failed to unpack message\n");
+                goto abort;
+        }
+        retval = res->rpm_retval;
+        /* Check if the desired return value is received
+         */
+        if (0 != retval) {
+                VE_RPMLIB_ERR("Received message verification failed.");
+                errno = -(retval);
+                goto hndl_return4;
+        }
+        /* Function will return success, if expected return value is
+         * received from VEOS
+         */
+        VE_RPMLIB_DEBUG("Message received successfully from VEOS" \
+                        " and retval = %d", retval);
+        goto hndl_return4;
+abort:
+        close(sock_fd);
+        abort();
+hndl_return4:
+        velib_connect__free_unpacked(res, NULL);
+hndl_return3:
+        free(unpack_buf_recv);
+hndl_return2:
+        free(pack_buf_send);
+hndl_return1:
+        close(sock_fd);
+hndl_return_sock:
+        free(ve_sock_name);
+hndl_return:
+        VE_RPMLIB_TRACE("Exiting");
+        return retval;
+
+}

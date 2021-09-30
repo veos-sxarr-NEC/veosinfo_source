@@ -747,6 +747,14 @@ struct ve_cns_info {
 	struct ve_ns_info_proc info[MAX_SWAP_PROCESS / NS_DIV];
 };
 
+/**
+ * @brief Structure to get veos scheduler parameters information
+ */
+struct ve_veosctl_stat {
+	int64_t timer_interval; /*!< for VEOS scheduler’s timer-interval */
+	int64_t time_slice;     /*!< for VE task's time-slice */
+};
+
 int ve_match_envrn(char *);
 char *ve_create_sockpath(int);
 int ve_arch_info(int, struct ve_archinfo *);
@@ -789,6 +797,8 @@ int ve_swap_out(int, struct ve_swap_pids *);
 int ve_swap_in(int, struct ve_swap_pids *);
 int verify_version(int);
 int ve_swap_get_cns(int, struct ve_swap_pids *, struct ve_cns_info *);
+int ve_veosctl_get_param(int nodeid, struct ve_veosctl_stat *vctl);
+int ve_veosctl_set_param(int nodeid, struct ve_veosctl_stat *vctl);
 
 #ifdef __cplusplus 
 } //extern "C"

@@ -2,8 +2,8 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([veosinfo], [2.7.6], [veos@sxarr.jp.nec.com])
-AM_INIT_AUTOMAKE(veosinfo, 2.7.6)
+AC_INIT([veosinfo], [2.9.0], [veos@sxarr.jp.nec.com])
+AM_INIT_AUTOMAKE(veosinfo, 2.9.0)
 AC_CONFIG_SRCDIR([ve_sock.h])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_COMMANDS([PROTO],
