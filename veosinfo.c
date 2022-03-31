@@ -48,7 +48,7 @@
 #include "veosinfo_log.h"
 #include "veosinfo_internal.h"
 #include "veosinfo_comm.h"
-
+#include <productinfo.h>
 
 /**
  * @brief This function is used to compare the versions.
@@ -3543,8 +3543,13 @@ int ve_cpu_info(int nodeid, struct ve_cpuinfo *cpu_info)
 
 	/* Get the model name from VE specific sysfs
 	 */
-	snprintf(cpu_info->modelname, sizeof(cpu_info->modelname),
-			"VE_%s_%s", cpu_info->family, cpu_info->model);
+	retval = get_ve_product_name(cpu_info->family, cpu_info->model,
+		cpu_info->modelname, sizeof(cpu_info->modelname));
+	if (retval != 0) {
+		strcpy(cpu_info->modelname,"Unknown Model");
+		VE_RPMLIB_DEBUG("Failed to get product name");
+	}
+	retval = -1;
 	VE_RPMLIB_DEBUG("Model name = %s", cpu_info->modelname);
 
 	memset(filename, '\0', (syspath_len + VE_FILE_NAME));
