@@ -42,20 +42,20 @@
 #define VE_ERANGE_LIMITOPT	-517	/*!< Error number if limit is out of range */
 #define VEO_PROCESS_EXIST	515	/*!< Identifier for VEO API PID */
 #define VE_VALID_THREAD		516	/*!< Identifier for process/thread */
-#define VE_MAX_NODE	8		/*!< Maximum number of VE nodes */
+#define VE_MAX_NODE	32		/*!< Maximum number of VE nodes */
 #define VE_PATH_MAX	4096		/*!< Maximum possible path length */
 #define VE_FILE_NAME	255		/*!< Maximum length of file name */
 #define FILENAME	15              /*!< Length of file used to get
 					 * pmap/ipcs/ipcrm command's information
 					 */
 #define VE_BUF_LEN	255
-#define VE_MAX_CORE_PER_NODE 16
+#define VE_MAX_CORE_PER_NODE 32
 #define VMFLAGS_LENGTH	81
 #define VE_MAX_CACHE	4		/*!< Maximum number of VE cache */
 #define VE_DATA_LEN     20
 #define VE_MAX_REGVALS  64		/*!< Max nr of transfered registers */
 #define MAX_DEVICE_LEN  255
-#define MAX_POWER_DEV   20
+#define MAX_POWER_DEV   255
 #define VE_PAGE_SIZE	2097152
 #define VKB		1024
 #define EXECVE_MAX_ARGS	256
@@ -63,9 +63,10 @@
 #define VE_NODE_SPECIFIER	"-N"
 #define MICROSEC_TO_SEC		1000000
 #define VE_NUMA_NUM	2		/* Maximum NUMA nodes in each VE node */
-#define MAX_CORE_IN_HEX	4		/* Maximum core value in HEX */
 #define MAX_SWAP_PROCESS 256
 #define NS_DIV 2
+#define MAX_CORE_IN_NUMA_NODE \
+	((VE_MAX_CORE_PER_NODE + VE_NUMA_NUM - 1) / VE_NUMA_NUM)
 #define VE_EINVAL_DEVICE -2      /*!< Error number for unsupported device */
 
 #ifdef __cplusplus  
@@ -651,7 +652,7 @@ struct ipcrm_info {
  */
 struct ve_numa_stat {
 	int tot_numa_nodes;                        /*!< NUMA node count */
-	char ve_core[VE_NUMA_NUM][MAX_CORE_IN_HEX];/*!< list of cores in each NUMA node */
+	char ve_core[VE_NUMA_NUM][MAX_CORE_IN_NUMA_NODE];/*!< list of cores in each NUMA node */
 	unsigned long long mem_size[VE_NUMA_NUM];  /*!< Memory size of each NUMA node */
 	unsigned long long mem_free[VE_NUMA_NUM];  /*!< Free memory in each NUMA node */
 };
@@ -797,6 +798,7 @@ int ve_swap_out(int, struct ve_swap_pids *);
 int ve_swap_in(int, struct ve_swap_pids *);
 int verify_version(int);
 int ve_swap_get_cns(int, struct ve_swap_pids *, struct ve_cns_info *);
+int ve_get_arch(int, char *);
 int ve_veosctl_get_param(int nodeid, struct ve_veosctl_stat *vctl);
 int ve_veosctl_set_param(int nodeid, struct ve_veosctl_stat *vctl);
 

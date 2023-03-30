@@ -1651,7 +1651,7 @@ int ve_stat_info(int nodeid, struct ve_statinfo *ve_statinfo_req)
 
 	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
-	request.subcmd_str = VE_STAT_INFO;
+	request.subcmd_str = VE_STAT_INFO_V3;
 	request.has_rpm_pid = true;
 	request.rpm_pid = getpid();
 
@@ -4896,6 +4896,7 @@ int read_yaml_file(int nodeid, char *type, struct ve_pwr_mgmt_info *pwr_info)
 	yaml_parser_t parser;
 	yaml_event_t  event;
 	int parsing_flag = 0;
+	char *archval = NULL;
 
 	VE_RPMLIB_TRACE("Entering");
 
@@ -4922,15 +4923,42 @@ int read_yaml_file(int nodeid, char *type, struct ve_pwr_mgmt_info *pwr_info)
 	}
 	VE_RPMLIB_DEBUG("VE model name: %s", model_name);
 
-	yamlfile = (char *)malloc(sizeof(char) * VE_PATH_MAX);
-	if (!yamlfile) {
+	archval = (char *)malloc(sizeof(char) * VE_PATH_MAX);
+	if (!archval) {
 		VE_RPMLIB_ERR("Memory allocation failed: %s",
 				strerror(errno));
 		goto hndl_return1;
 	}
-	sprintf(yamlfile, "%s/%s", YAML_FILE_PATH, "ve_hw_spec.yaml");
+	memset(archval, '\0', VE_PATH_MAX);
+
+	/* Get the architecture value to select the appropriate yaml file */
+	retval = ve_get_arch(nodeid, archval);
+	if (-1 == retval) {
+		VE_RPMLIB_ERR("Failed to get architecture: %s",
+				strerror(errno));
+		goto hndl_free_arch;
+
+	}
+	yamlfile = (char *)malloc(sizeof(char) * VE_PATH_MAX);
+	if (!yamlfile) {
+		VE_RPMLIB_ERR("Memory allocation failed: %s",
+				strerror(errno));
+		goto hndl_free_arch;
+	}
+	memset(yamlfile, '\0', VE_PATH_MAX);
+
+	if (!strncmp(archval, "ve1", 3)) {
+		sprintf(yamlfile, "%s/%s", YAML_FILE_PATH, "ve_hw_spec.yaml");
+	} else if (!strncmp(archval, "ve3", 3)) {
+		sprintf(yamlfile, "%s/%s", YAML_FILE_PATH_VE3, "ve3_hw_spec.yaml");
+	} else {
+		VE_RPMLIB_ERR("Invalid architecture: %s", strerror(errno));
+		goto hndl_return2;
+	}
+	VE_RPMLIB_DEBUG("yamlfile path: %s", yamlfile);
 
 	fp = fopen(yamlfile, "r");
+
 	if (!fp) {
 		VE_RPMLIB_ERR("Failed to open file (%s): %s",
 				yamlfile, strerror(errno));
@@ -5135,6 +5163,8 @@ event_delete:
 	yaml_event_delete(&event);
 hndl_return2:
 	free(yamlfile);
+hndl_free_arch:
+	free(archval);
 hndl_return1:
 	free(model_name);
 parser_delt:
@@ -5379,7 +5409,7 @@ int ve_numa_info(int nodeid, struct ve_numa_stat *ve_numa)
 
 	request.cmd_str = RPM_QUERY_COMPT;
 	request.has_subcmd_str = true;
-	request.subcmd_str = VE_NUMA_INFO;
+	request.subcmd_str = VE_NUMA_INFO_V3;
 	request.has_rpm_pid = true;
 	request.rpm_pid = getpid();
 	request.has_rpm_msg = true;
@@ -6127,7 +6157,152 @@ ve_swap_get_cns(int nodeid, struct ve_swap_pids *pids,
 }
 
 /**
- * @brief This function is used to get scheduler parameters such as
+ * @brief This function populates the architecture for given VE node.
+ *
+ * @param nodeid[in] VE node number corresponding to which architecture will be
+ * extracted from VEOS
+ * @param archval[out] Architecture value received from veos
+ *
+ * @return 0 on success and -1 on failure
+ */
+int ve_get_arch(int nodeid, char *archval)
+{
+	int retval = -1;
+	int sock_fd = -1;
+	int pack_msg_len = -1;
+	void *pack_buf_send = NULL;
+	uint8_t *unpack_buf_recv = NULL;
+	char *ve_sock_name = NULL;
+	VelibConnect *res = NULL;
+	VelibConnect request = VELIB_CONNECT__INIT;
+
+	VE_RPMLIB_TRACE("Entering");
+	errno = 0;
+	if (!archval) {
+		VE_RPMLIB_ERR("Wrong argument received: archval = %p",
+				archval);
+		errno = EINVAL;
+		goto hndl_return;
+	}
+	/* Create the socket path corresponding to received VE node
+	 */
+	ve_sock_name = ve_create_sockpath(nodeid);
+	if (!ve_sock_name) {
+		VE_RPMLIB_ERR("Failed to create socket path for VE: %s",
+				strerror(errno));
+		goto hndl_return;
+	}
+
+	/* Create the socket connection corresponding to socket path
+	 */
+	sock_fd = velib_sock(ve_sock_name);
+	if (-1 == sock_fd) {
+		VE_RPMLIB_ERR("Failed to create socket:%s, error: %s",
+				ve_sock_name, strerror(errno));
+		goto hndl_return_sock;
+	} else if (-2 == sock_fd)
+		goto abort;
+
+	request.cmd_str = RPM_QUERY_COMPT;
+	request.has_subcmd_str = true;
+	request.subcmd_str = VE_GET_ARCH;
+	request.has_rpm_pid = true;
+	request.rpm_pid = getpid();
+
+	/* Get the request message size to send to VEOS */
+	pack_msg_len = velib_connect__get_packed_size(&request);
+	if (0 >= pack_msg_len) {
+		VE_RPMLIB_ERR("Failed to get size to pack message");
+		fprintf(stderr, "Failed to get size to pack message\n");
+		goto abort;
+	}
+
+	pack_buf_send = malloc(pack_msg_len);
+	if (!pack_buf_send) {
+		VE_RPMLIB_ERR("Memory allocation failed: %s",
+				strerror(errno));
+		goto hndl_return1;
+	}
+	VE_RPMLIB_DEBUG("pack_msg_len = %d", pack_msg_len);
+	memset(pack_buf_send, '\0', pack_msg_len);
+
+	/* Pack the message to send to VEOS */
+	retval = velib_connect__pack(&request, pack_buf_send);
+	if (retval != pack_msg_len) {
+		VE_RPMLIB_ERR("Failed to pack message");
+		fprintf(stderr, "Failed to pack message\n");
+		goto abort;
+	}
+
+	/* Send the IPC message to VEOS and wait for the acknowledgment
+	 * from VEOS
+	 */
+	retval = velib_send_cmd(sock_fd, pack_buf_send, pack_msg_len);
+	if (retval != pack_msg_len) {
+		VE_RPMLIB_ERR("Failed to send message: %d bytes written",
+				retval);
+		goto hndl_return2;
+	}
+	VE_RPMLIB_DEBUG("Send data successfully to VEOS and" \
+					" waiting to receive....");
+
+	unpack_buf_recv = malloc(MAX_PROTO_MSG_SIZE);
+	if (!unpack_buf_recv) {
+		VE_RPMLIB_ERR("Memory allocation failed: %s",
+				strerror(errno));
+		goto hndl_return2;
+	}
+	memset(unpack_buf_recv, '\0', MAX_PROTO_MSG_SIZE);
+
+	/* Receive the IPC message from VEOS
+	 */
+	retval = velib_recv_cmd(sock_fd, unpack_buf_recv, MAX_PROTO_MSG_SIZE);
+	if (-1 == retval) {
+		VE_RPMLIB_ERR("Failed to receive message: %s",
+				strerror(errno));
+		goto hndl_return3;
+	}
+	VE_RPMLIB_DEBUG("Data received successfully from VEOS, now verify it.");
+
+	/* Unpack the data received from VEOS */
+	res = velib_connect__unpack(NULL, retval,
+			(const uint8_t *)(unpack_buf_recv));
+	if (!res) {
+		VE_RPMLIB_ERR("Failed to unpack message: %d", retval);
+		fprintf(stderr, "Failed to unpack message\n");
+		goto abort;
+	}
+	retval = res->rpm_retval;
+	/* Check if the desired return value is received
+	 */
+	if (0 != retval) {
+		VE_RPMLIB_ERR("Received message verification failed.");
+		errno = -(retval);
+		goto hndl_return4;
+	}
+	memcpy(archval, res->rpm_msg.data, res->rpm_msg.len);
+	VE_RPMLIB_DEBUG("Received message from VEOS and retval = %d", retval);
+
+	goto hndl_return4;
+abort:
+	close(sock_fd);
+	abort();
+hndl_return4:
+	velib_connect__free_unpacked(res, NULL);
+hndl_return3:
+	free(unpack_buf_recv);
+hndl_return2:
+	free(pack_buf_send);
+hndl_return1:
+	close(sock_fd);
+hndl_return_sock:
+	free(ve_sock_name);
+hndl_return:
+	VE_RPMLIB_TRACE("Exiting");
+	return retval;
+}
+
+/** @brief This function is used to get scheduler parameters such as
  *        timer-interval and time-slice of veos for given VE node.
  * @param nodeid [in]   VE node number
  * @param vctl   [out]  Structure to get information about VEOS

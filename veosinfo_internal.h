@@ -43,8 +43,9 @@
 #define VE_MAX_CACHE	4		/*!< Maximum number of VE cache */
 #define DEV_PATH	"/dev"		/*!< VE node device path */
 #define VE_DEVICE_NAME	"veslot"	/*!< VE node name */
-#define YAML_FILE_PATH	VE_ETC_BASE "/mmm/info"
-#define MAX_POWER_DEV	20
+#define MAX_POWER_DEV	255
+#define YAML_FILE_PATH	VE_ETC_BASE "/ve/mmm/info"
+#define YAML_FILE_PATH_VE3	VE_ETC_BASE "/ve3/mmm/info"
 #define SENSOR_DEV_NAME_INDEX 0
 #define YAML_FILE_INDEX 11
 #define YAML_DATA_DEM  1000000		/*!<

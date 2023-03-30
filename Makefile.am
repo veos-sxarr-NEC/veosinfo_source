@@ -12,7 +12,7 @@ libveosinfo_la_SOURCES = \
 	veos_RPM.pb-c.c\
 	veos_RPM.pb-c.h
 libveosinfo_la_CFLAGS = -g -Wall -fPIC -I${prefix}/include
-libveosinfo_la_LDFLAGS = -version-info 1:0:0
+libveosinfo_la_LDFLAGS = -version-info 3:0:0
 libveosinfo_la_LIBADD = -lveproductinfo
 libveosinfo_la_includedir = $(includedir)/veosinfo
 libveosinfo_la_include_HEADERS = veosinfo.h veosinfo_log.h
