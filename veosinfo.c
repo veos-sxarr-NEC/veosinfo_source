@@ -6123,6 +6123,23 @@ int ve_swap_out(int nodeid, struct ve_swap_pids *pids)
 }
 
 /**
+ * @brief This function is used to request for VEOS to swap out
+ *>-  with f option of the given VE process id.
+ *
+ * @param nodeid[in] VE node ID
+ * @param pids_f [in] Structre that contain VE processID array
+ *			and required free size
+ *
+ * @return 0 on success and negative value on failure
+ */
+int ve_swap_out_f(int nodeid, struct ve_swap_pids_f *pids_f)
+{
+	return ve_message_send_receive(nodeid, VE_SWAP_OUT_F,
+				pids_f, sizeof(struct ve_swap_pids_f),
+				NULL, 0);
+}
+
+/**
  * @brief This function is used to request for VEOS to swap in
  *	  of the given VE process id.
  *

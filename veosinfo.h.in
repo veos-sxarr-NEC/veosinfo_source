@@ -698,6 +698,14 @@ struct ve_swap_pids {
 };
 
 /**
+ * @brief Structure of VE process ID and required-free-size for PPS
+ */
+struct ve_swap_pids_f {
+	struct ve_swap_pids pids;	/*!< Structure of VE process ID for PPS */
+	size_t required_free_size;  /*!< Required-free-size */
+};
+
+/**
  * @brief Structure to get swap informations of VE process
  */
 struct ve_swap_struct {
@@ -795,6 +803,7 @@ int ve_swap_statusinfo(int, struct ve_swap_pids *, struct ve_swap_status_info *)
 int ve_swap_info(int, struct ve_swap_pids *, struct ve_swap_info *);
 int ve_swap_nodeinfo(int, struct ve_swap_node_info *);
 int ve_swap_out(int, struct ve_swap_pids *);
+int ve_swap_out_f(int, struct ve_swap_pids_f *);
 int ve_swap_in(int, struct ve_swap_pids *);
 int verify_version(int);
 int ve_swap_get_cns(int, struct ve_swap_pids *, struct ve_cns_info *);

@@ -70,6 +70,7 @@ enum velib_cmdreq {
 	VE_GET_ARCH,
         VE_VEOSCTL_GET_PARAM,
         VE_VEOSCTL_SET_PARAM,
+	VE_SWAP_OUT_F,
 	VE_RPM_INVALID = -1
 };
 
