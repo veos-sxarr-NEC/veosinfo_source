@@ -300,6 +300,7 @@ int ve_match_envrn(char *envrn)
 	int sock_fd = -1;
 	char sock_name[VE_PATH_MAX] = {0};
 	char *node_status_path = NULL;
+	char *endptr = NULL;
 	const char ve_sysfs_path[PATH_MAX] = {0};
 
 	VE_RPMLIB_TRACE("Entering");
@@ -308,8 +309,19 @@ int ve_match_envrn(char *envrn)
 		errno = EINVAL;
 		goto hndl_return;
 	}
-
-	nodeid = atoi(envrn);
+	if(*envrn == '\0') {
+		nodeid = 0;
+	}
+	else {
+		errno = 0;
+		nodeid = strtol(envrn, &endptr, 10);
+		if ((errno != 0) || (endptr == envrn) || (*endptr != '\0') ||
+				(nodeid < 0)) {
+			VE_RPMLIB_ERR("Invalid node number = %p", envrn);
+			errno = EINVAL;
+			goto hndl_return;
+		}
+	}
 	/* Get sysfs path corresponding to given VE node */
 	retval = ve_sysfs_path_info(nodeid, ve_sysfs_path);
 	if (-1 == retval) {
