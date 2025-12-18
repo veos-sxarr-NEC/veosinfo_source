@@ -555,7 +555,7 @@ int ve_node_info(struct ve_nodeinfo *ve_nodeinfo_req)
 	int retval = -1;
 	int nread = 0;
 	char *node_status_path = NULL;
-	const char ve_sysfs_path[PATH_MAX] = {0};
+	char ve_sysfs_path[PATH_MAX] = {0};
 
 	VE_RPMLIB_TRACE("Entering");
 	if (!ve_nodeinfo_req) {
@@ -1386,9 +1386,10 @@ int ve_check_pid(int nodeid, int pid)
 	} else if (VEO_PROCESS_EXIST == retval) {
 		VE_RPMLIB_DEBUG("VEOS returned = %d", retval);
 		errno = -ESRCH;
-	} else
+	} else {
 		VE_RPMLIB_ERR("Received return value from veos= %d", retval);
 		errno = -(retval);
+	}
 	goto hndl_return4;
 abort:
 	close(sock_fd);
